@@ -392,6 +392,7 @@ const DEFTPL=()=>[
 ];
 function freshStart(){const s=seed();s.events=[];s.tasks=[];s.habits=s.habits.map(h=>({...h,log:{}}));s.onb={hidden:false,study:false};return s}
 function ensureNew(s){
+  if(s.profile&&typeof s.profile==='object'&&s.profile.term===undefined)s.profile.term='';
   s.items=Array.isArray(s.items)?s.items:[];s.hacks=Array.isArray(s.hacks)?s.hacks:[];s.comms=Array.isArray(s.comms)?s.comms:[];
   s.templates=Array.isArray(s.templates)?s.templates:DEFTPL();
   s.att=s.att||{};s.att.snooze=s.att.snooze||{};
@@ -416,9 +417,8 @@ function seed(){
   const T=(title,subject,due,est,prio,x={})=>({id:'t'+(++n),title,subject,due:addDays(t0,due),est,prio,done:false,sched:0,...x});
   const log=(k)=>{const o={};for(let i=0;i<14;i++){if((i*7+k*3)%5!==0&&!(i===0&&k%2))o[addDays(t0,-i)]=true}return o};
   return {
-    profile:{name:'Sanjana',college:'',city:'',radius:15,commute:30,course:'B.Tech, first year',goals:'Build my first real projects and get onto a hackathon team.',
-      subjects:['Engineering Mathematics I','Engineering Physics','Programming in Python','Basic Electrical'],
-      skills:['Python','HTML','CSS'],interests:['Hackathons','Web development','Open source'],growth:['JavaScript','Git','Teamwork','Problem solving'],
+    profile:{name:'',college:'',city:'',radius:15,commute:30,course:'',term:'',goals:'',
+      subjects:[],skills:[],interests:[],growth:[],
       availStart:'08:00',availEnd:'22:00',peak:'morning',cap:8,buffer:15,sessionLen:90},
     events:[
       R('Engineering Mathematics I','class',0,'09:00','10:00','Block A, 204'),R('Python Lab','class',0,'14:00','17:00','CS Lab 2'),
@@ -825,9 +825,9 @@ VIEWS.profile=()=>{
   const p=S.profile;
   return head('Your profile','Everything the planner knows about you. Change anything and the plans and matches update.')
   +`<div class="grid2"><section class="card" style="display:flex;flex-direction:column;gap:18px"><header style="margin:0"><h2>About you</h2></header>
-    <div class="fgrid">${pf('name','Name')}${pf('college','College')}${pf('city','City')}${pf('radius','Travel radius (km)','number','min="0"')}${pf('commute','Longest commute (min)','number','min="0"')}${pf('course','Course and year')}</div>
+    <div class="fgrid">${pf('name','Name')}${pf('college','College')}${pf('city','City')}${pf('radius','Travel radius (km)','number','min="0"')}${pf('commute','Longest commute (min)','number','min="0"')}${pf('course','Course and year')}${pf('term','Term or semester')}</div>
     <label class="f">Your main goals<textarea class="in" style="min-height:70px;font-family:inherit;font-size:15px" id="pf-goals" data-pf="goals">${esc(p.goals)}</textarea></label>
-    ${chipEd('subjects','Subjects','Add a subject')}${chipEd('skills','Skills you have','Add a skill')}${chipEd('interests','Interests','Add an interest')}${chipEd('growth','Skills to build','Add a skill to learn')}</section>
+    ${chipEd('subjects','Courses this term','Add a course')}${chipEd('skills','Skills you have','Add a skill')}${chipEd('interests','Interests','Add an interest')}${chipEd('growth','Skills to build','Add a skill to learn')}</section>
    <div style="display:flex;flex-direction:column;gap:20px;min-width:0">
     <section class="card" style="display:flex;flex-direction:column;gap:16px"><header style="margin:0"><h2>Availability and energy</h2></header>
       <div class="fgrid">${pf('availStart','Day starts','time')}${pf('availEnd','Day ends','time')}${pf('cap','Max hours a day','number','min="1" max="14"')}${pf('buffer','Break between items (min)','number','min="0" step="5"')}${pf('sessionLen','Study session (min)','number','min="30" step="15"')}</div>
