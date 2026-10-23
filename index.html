@@ -401,6 +401,7 @@ function ensureNew(s){
   s.ntfy.sent=(s.ntfy.sent&&typeof s.ntfy.sent==='object')?s.ntfy.sent:{};
   for(const k in s.ntfy.sent){const v=s.ntfy.sent[k];if(typeof v==='number'){if(v>Date.now())s.ntfy.legacy=(s.ntfy.legacy||0)+1;delete s.ntfy.sent[k]}}
   if(s.ntfy.legacy&&!Object.keys(s.ntfy.sent).length&&s.ntfy.last&&Date.now()>s.ntfy.last+4*864e5)s.ntfy.legacy=0;
+  s.account=Object.assign({clientId:'94007468576-396pc43pp5avuquok0ula4k6uurci04n.apps.googleusercontent.com',name:'',email:''},s.account||{});if(!s.account.clientId)s.account.clientId='94007468576-396pc43pp5avuquok0ula4k6uurci04n.apps.googleusercontent.com';
   if(!s.onb||typeof s.onb!=='object')s.onb={hidden:true};
   s.onb=Object.assign({hidden:true,study:false},s.onb);
   for(const it of s.items){if(!CAT[it.cat])it.cat='event';if(!it.date){it.date=null;it.time=''}it.dateStatus=(it.dateStatus==='confirmed'&&it.date)?'confirmed':'verify';it.rsvp=it.rsvp||'none';it.checklist=Array.isArray(it.checklist)?it.checklist:[]}
@@ -1984,7 +1985,7 @@ Object.assign(A,{
 /* ---------- Backup and restore ---------- */
 const BDRE=/^\d{4}-\d{2}-\d{2}$/,BTRE=/^([01]\d|2[0-3]):[0-5]\d$/;
 const COLS=[['events','Calendar events'],['tasks','Tasks'],['habits','Habits'],['items','Captured items'],['hacks','Hackathons'],['comms','Communities'],['templates','Study templates']];
-function exportObj(){const d=JSON.parse(JSON.stringify(S));delete d.fired;delete d.ntfy;return {app:'AuraStudent',schema:1,exportedAt:new Date().toISOString(),data:d}}
+function exportObj(){const d=JSON.parse(JSON.stringify(S));delete d.fired;delete d.ntfy;delete d.account;return {app:'AuraStudent',schema:1,exportedAt:new Date().toISOString(),data:d}}
 function validateBackup(raw){
   const errs=[];let o;
   try{o=JSON.parse(raw)}catch(e){return {errs:['This is not valid JSON. The file may be damaged or is not an AuraStudent backup.']}}
@@ -2005,12 +2006,12 @@ function validateBackup(raw){
 }
 function applyImport(d,mode){
   try{localStorage.setItem(KEY+'.prev',JSON.stringify(S))}catch(e){}
-  const keepNtfy=S.ntfy;
+  const keepNtfy=S.ntfy,keepAcct=S.account;
   if(mode==='replace'){
     const b=seed();
     S={profile:d.profile?Object.assign({},b.profile,d.profile):b.profile,events:d.events||[],tasks:d.tasks||[],sugs:[],unplaced:[],habits:d.habits||[],opps:d.opps||b.opps,rooms:d.rooms||[],notif:Object.assign({},b.notif,d.notif||{}),learn:d.learn||{notes:[],estMult:{}},chat:d.chat||[],auto:Object.assign({},b.auto,d.auto||{}),items:d.items||[],hacks:d.hacks||[],comms:d.comms||[],templates:d.templates||DEFTPL(),att:d.att||{snooze:{}},fired:{}};
     S.learn.notes=S.learn.notes||[];S.learn.estMult=S.learn.estMult||{};
-    if(keepNtfy)S.ntfy=keepNtfy;
+    if(keepNtfy)S.ntfy=keepNtfy;if(keepAcct)S.account=keepAcct;
     ensureNew(S);return COLS.reduce((a,[k])=>a+(d[k]||[]).length,0);
   }
   let n=0;
@@ -2178,8 +2179,8 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)ntfyLater(
 window.addEventListener('online',()=>ntfyLater());
 /* keep alert settings when demo data is reloaded or everything is wiped, then cancel alerts for items that no longer exist */
 {const _rd=A.resetDemo,_wp=A.wipe;
- A.resetDemo=el=>{const k=S.ntfy;_rd(el);S.ntfy=k;save()};
- A.wipe=el=>{const k=S.ntfy;_wp(el);S.ntfy=k;save()};}
+ A.resetDemo=el=>{const k=S.ntfy,ac=S.account;_rd(el);S.ntfy=k;S.account=ac;save()};
+ A.wipe=el=>{const k=S.ntfy,ac=S.account;_wp(el);S.ntfy=k;S.account=ac;save()};}
 
 /* in-app prompt: only when alerts are about to run out or the last attempt failed */
 function ntfyBanner(){
@@ -2298,6 +2299,50 @@ Object.assign(A,{
 {const _pk=A.peak;A.peak=el=>{S.onb.study=true;_pk(el)}}
 document.addEventListener('change',e=>{const k=e.target.dataset&&e.target.dataset.pf;if(k&&['availStart','availEnd','cap','buffer','sessionLen'].includes(k)){S.onb.study=true}});
 
+
+/* ================= Google sign-in (identity only, opt-in, loaded only when you press the button) ================= */
+const gDecode=t=>{try{let p=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');p+='='.repeat((4-p.length%4)%4);return JSON.parse(decodeURIComponent(escape(atob(p))))}catch(e){return null}};
+const gIdOK=v=>/^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/i.test((v||'').trim());
+let gLoading=null;
+function gLoad(){
+  if(window.google&&google.accounts&&google.accounts.id)return Promise.resolve();
+  if(gLoading)return gLoading;
+  gLoading=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='https://accounts.google.com/gsi/client';sc.async=true;sc.onload=res;sc.onerror=()=>{gLoading=null;rej(new Error('Could not load Google sign-in. Check your connection.'))};document.head.appendChild(sc)});
+  return gLoading;
+}
+function gCb(resp){
+  const p=resp&&resp.credential?gDecode(resp.credential):null;
+  if(!p||!p.email||(p.aud&&p.aud!==S.account.clientId)){toast('Google sign-in did not complete. Try again.');return}
+  S.account.name=p.name||'';S.account.email=p.email;save();render();toast('Signed in as '+p.email);
+}
+function acctCard(){
+  const a=S.account,on=!!a.email;
+  return `<section class="card" aria-labelledby="gs-h"><header><h2 id="gs-h">Google account</h2><span class="pill ${on?'ok':''}">${on?'Signed in':'Signed out'}</span></header>
+   <p class="sm muted">Sign-in only shows who you are on this device. Your planner data is not sent to Google or anywhere else, and it does not sync between devices. Google is contacted only when you press the sign-in button.</p>
+   ${on?`<div class="setrow"><b>${esc(a.name||'Signed in')}</b><span class="sm">${esc(a.email)}</span></div><div class="row" style="margin-top:10px;flex-wrap:wrap">${a.name&&a.name!==S.profile.name?'<button class="btn" data-act="gUseName">Use my Google name in the app</button>':''}<button class="btn" data-act="gOut">Sign out</button></div>`
+   :`<form data-form="gSave" class="fgrid" style="margin-top:10px"><label class="f" style="grid-column:1/-1">Google Client ID<input class="in" id="g-id" name="id" value="${esc(a.clientId)}" placeholder="1234567890-abc.apps.googleusercontent.com" autocomplete="off" spellcheck="false"></label>
+    <p class="sm faint" style="grid-column:1/-1">In Google Cloud Console, add <b>${esc(location.origin&&location.origin!=='null'?location.origin:'your app address')}</b> as an authorized JavaScript origin for this Client ID.</p>
+    <div id="g-err" class="sm" style="grid-column:1/-1;color:var(--bad);font-weight:600" role="alert"></div>
+    <div class="row" style="grid-column:1/-1;flex-wrap:wrap"><button class="btn pri">Sign in with Google</button></div></form><div id="g-btn" style="margin-top:12px"></div>`}</section>`;
+}
+{const _vp7=VIEWS.profile;VIEWS.profile=()=>_vp7()+acctCard()}
+F.gSave=async(d)=>{
+  const id=(d.get('id')||'').trim(),err=$('#g-err');
+  if(!gIdOK(id)){err.textContent='That does not look like a Google Client ID. It ends with .apps.googleusercontent.com';return}
+  S.account.clientId=id;save();err.textContent='Loading Google sign-in...';
+  try{
+    await gLoad();
+    google.accounts.id.initialize({client_id:id,callback:gCb});
+    const b=$('#g-btn');if(b)google.accounts.id.renderButton(b,{theme:'outline',size:'large',text:'signin_with'});
+    google.accounts.id.prompt();
+    err.textContent='Press the Google button above. If it does not appear, check the Client ID and that this address is an authorized origin.';
+  }catch(e){err.textContent=(e&&e.message)||'Could not start Google sign-in.'}
+};
+Object.assign(A,{
+ gOut:()=>{try{if(window.google&&google.accounts&&google.accounts.id)google.accounts.id.disableAutoSelect()}catch(e){}S.account.name='';S.account.email='';save();render();toast('Signed out')},
+ gUseName:()=>{S.profile.name=S.account.name;save();render();toast('Name updated')}
+});
+
 function render(){$('#view').innerHTML=VIEWS[UI.view]();renderNav();if(UI.view==='assistant'){const c=$('#chatlog');if(c)c.scrollTop=c.scrollHeight}}
 
 try{const t=localStorage.getItem(TKEY);if(t)document.documentElement.dataset.theme=t;const v=localStorage.getItem('aurastudent.view');if(v&&VIEWS[v])UI.view=v}catch(e){}
@@ -2305,5 +2350,5 @@ render();
 setInterval(()=>{if(UI.view==='today'&&!$('#modal').innerHTML&&!document.activeElement.closest('form'))render()},60000);
 setTimeout(checkReminders,1500);setInterval(checkReminders,30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkReminders()});
 </script>
-<script>if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
 </body></html>
+
