@@ -384,7 +384,7 @@ const PEAK={morning:[480,720],afternoon:[780,1020],evening:[1080,1320]};
 /* ---------- Phase 1 data model: items, hackathons, communities, templates ---------- */
 const CAT={course:'Course item',community:'Community item',event:'Event',deadline:'Deadline'};
 const MSDEF=[['registration','Registration',false],['team','Team formation',true],['submission','Submission',false],['start','Event start',false]];
-const REMOPT=[['none','No reminder'],['15m','15 min before'],['1h','1 hour before'],['morning','Morning of the day'],['1d','Morning before']];
+const REMOPT=[['none','No reminder'],['0m','At the time'],['15m','15 min before'],['1h','1 hour before'],['morning','Morning of the day'],['1d','Morning before']];
 const DEFTPL=()=>[
   {id:'tp1',name:'Deep work block',title:'Deep work',dur:90,days:[0,1,2,3,4],start:'08:00',note:'One subject, phone away.'},
   {id:'tp2',name:'Revise the day’s lectures',title:'Revise lecture notes',dur:45,days:[0,1,2,3,4],start:'19:00',note:'Rewrite the key points from memory.'},
@@ -393,6 +393,7 @@ const DEFTPL=()=>[
 function freshStart(){const s=seed();s.events=[];s.tasks=[];s.habits=s.habits.map(h=>({...h,log:{}}));s.onb={hidden:false,study:false};return s}
 function ensureNew(s){
   if(s.profile&&typeof s.profile==='object'&&s.profile.term===undefined)s.profile.term='';
+  s.courses=Array.isArray(s.courses)?s.courses:[];
   s.items=Array.isArray(s.items)?s.items:[];s.hacks=Array.isArray(s.hacks)?s.hacks:[];s.comms=Array.isArray(s.comms)?s.comms:[];
   s.templates=Array.isArray(s.templates)?s.templates:DEFTPL();
   s.att=s.att||{};s.att.snooze=s.att.snooze||{};
@@ -712,6 +713,7 @@ VIEWS.tasks=()=>{
     <form data-form="taskAdd" class="fgrid" style="align-items:end">
       <label class="f" style="grid-column:1/-1">What needs doing<input class="in" id="tk-title" name="title" required placeholder="Finish chemistry worksheet"></label>
       <label class="f">Due<input class="in" type="date" id="tk-due" name="due" value="${addDays(t0,3)}"></label>
+      <label class="f">Due time (optional)<input class="in" type="time" id="tk-dtime" name="dtime"></label>
       <label class="f">Hours needed<input class="in" type="number" id="tk-est" name="est" min=".5" step=".5" value="1.5"></label>
       <label class="f">Priority<select class="in" id="tk-prio" name="prio"><option value="3">High</option><option value="2" selected>Medium</option><option value="1">Low</option></select></label>
       <label class="f">Repeats<select class="in" id="tk-rec" name="rec"><option value="">Never</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
@@ -724,7 +726,7 @@ VIEWS.tasks=()=>{
       <button class="btn pri" style="grid-column:1/-1">${ico('bolt',18)}Create steps</button></form></section></div>`
   +(Object.keys(groups).length?`<section class="card"><header><h2>Goals in progress</h2></header><div class="grid3">${Object.entries(groups).map(([g,ts])=>{const d=ts.filter(t=>t.done).length;return `<div class="gprog"><div class="row" style="justify-content:space-between"><b>${esc(g)}</b><span class="sm muted num">${d} of ${ts.length}</span></div><div class="meter"><i style="width:${d/ts.length*100}%"></i></div></div>`}).join('')}</div></section>`:'')
   +`<section class="card"><header><h2>${tab==='done'?'Completed':tab==='all'?'All tasks':'To do'}</h2><span class="pill">${list.length}</span></header>`
-  +(list.length?list.map(t=>{const risk=atRisk(t),ov=t.due&&t.due<t0&&!t.done;return `<div class="task ${t.done?'done':''}"><button class="cb" role="checkbox" aria-checked="${t.done}" aria-label="Mark ${esc(t.title)} done" data-act="taskToggle" data-arg="${t.id}">${ico('check',16)}</button><div style="min-width:0"><div class="tt">${esc(t.title)}</div><div class="meta"><span>${esc(t.subject||'')}</span>${t.due?`<span class="num" style="${ov?'color:var(--bad);font-weight:700':''}">${rel(t.due)} · ${fd(t.due)}</span>`:''}<span class="num">${hrs(t.est)}</span><span class="pill ${PR[t.prio][1]}">${PR[t.prio][0]}</span>${t.rec?`<span class="pill acc">${ico('repeat',12)}${t.rec}</span>`:''}${t.sched?`<span class="pill ok">${hrs(t.sched/60)} booked</span>`:''}${risk&&!t.done?'<span class="pill warn">At risk</span>':''}</div></div><button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Delete task" data-act="taskDel" data-arg="${t.id}">${ico('trash',16)}</button></div>`}).join(''):`<div class="empty"><b>${tab==='done'?'Nothing finished yet':'You are all caught up'}</b>${tab==='done'?'Completed tasks show up here.':'Add a task above, or break a goal into steps.'}</div>`)
+  +(list.length?list.map(t=>{const risk=atRisk(t),ov=t.due&&t.due<t0&&!t.done;return `<div class="task ${t.done?'done':''}"><button class="cb" role="checkbox" aria-checked="${t.done}" aria-label="Mark ${esc(t.title)} done" data-act="taskToggle" data-arg="${t.id}">${ico('check',16)}</button><div style="min-width:0"><div class="tt">${esc(t.title)}</div><div class="meta"><span>${esc(t.subject||'')}</span>${t.due?`<span class="num" style="${ov?'color:var(--bad);font-weight:700':''}">${rel(t.due)} · ${fd(t.due)}${t.dueTime?' · '+t.dueTime:''}</span>`:''}<span class="num">${hrs(t.est)}</span><span class="pill ${PR[t.prio][1]}">${PR[t.prio][0]}</span>${t.rec?`<span class="pill acc">${ico('repeat',12)}${t.rec}</span>`:''}${t.sched?`<span class="pill ok">${hrs(t.sched/60)} booked</span>`:''}${risk&&!t.done?'<span class="pill warn">At risk</span>':''}${!t.done&&t.due?`<button class="btn sm ghost" style="padding:2px 8px;min-height:0" data-act="taskTime" data-arg="${t.id}">${t.dueTime?'Change alert time':'Set alert time'}</button>`:''}</div></div><button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Delete task" data-act="taskDel" data-arg="${t.id}">${ico('trash',16)}</button></div>`}).join(''):`<div class="empty"><b>${tab==='done'?'Nothing finished yet':'You are all caught up'}</b>${tab==='done'?'Completed tasks show up here.':'Add a task above, or break a goal into steps.'}</div>`)
   +`</section>`;
 };
 const TEMPL={
@@ -960,7 +962,7 @@ const A={
  dataCopy:()=>{const t=$('#data-out');t.select();(navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).then(()=>toast('Copied')).catch(()=>toast('Press Ctrl+C to copy the selected text'))},
  resetDemo:()=>{S=seed();save();render();toast('Demo data loaded')},
  wipeAsk:()=>{UI.confirmWipe=true;render()},wipeCancel:()=>{UI.confirmWipe=false;render()},
- wipe:()=>{const s=seed();S={...s,profile:{...s.profile,name:'',skills:[],interests:[],growth:[],subjects:[],goals:''},events:[],tasks:[],habits:[],sugs:[],rooms:[]};UI.confirmWipe=false;try{localStorage.removeItem(KEY)}catch(e){}save();render();toast('All your data was deleted')}
+ wipe:()=>{const s=seed();S={...s,profile:{...s.profile,name:'',skills:[],interests:[],growth:[],subjects:[],goals:''},events:[],tasks:[],habits:[],sugs:[],rooms:[],courses:[]};UI.confirmWipe=false;try{localStorage.removeItem(KEY)}catch(e){}save();render();toast('All your data was deleted')}
 };
 const F={
  evSave:(d,f)=>{
@@ -995,7 +997,7 @@ function fireRem(key,title,body){
 }
 function checkReminders(){
   const n=nowM(),t0=today(),lead=+S.notif.eventLead||15;
-  if(S.notif.events)for(const e of occ(t0)){const st=mins(e.start);if(e.type!=='rest'&&st>n&&st-n<=lead)fireRem(`ev:${e.id}:${t0}`,e.title,`Starts in ${st-n} min${e.loc?' · '+e.loc:''}`)}
+  if(S.notif.events)for(const e of occ(t0)){const st=mins(e.start);if(!e.ro&&e.type!=='rest'&&st>n&&st-n<=lead)fireRem(`ev:${e.id}:${t0}`,e.title,`Starts in ${st-n} min${e.loc?' · '+e.loc:''}`)}
   if(S.notif.deadlines&&n>=480){
     for(const t of S.tasks){if(t.done||!t.due)continue;const d=between(t0,t.due);
       if(d<0)fireRem(`od:${t.id}:${t0}`,`Overdue: ${t.title}`,`Was due ${fd(t.due)}. Reschedule it or finish it today.`);
@@ -1905,8 +1907,8 @@ function entryRems(){
   for(const e of entries()){
     if(!e.date||e.done||e.dis||e.remind==='none'||e.rsvp==='no'||(e.snooze&&e.snooze>t0))continue;
     const dd=between(t0,e.date);if(dd<0)continue;
-    const lead={'15m':15,'1h':60}[e.remind];let tgt;
-    if(lead&&e.time)tgt=dd*1440+mins(e.time)-lead;else tgt=(dd-(e.remind==='1d'?1:0))*1440+480;
+    const lead={'0m':0,'15m':15,'1h':60}[e.remind];let tgt;
+    if(lead!==undefined&&e.time)tgt=dd*1440+mins(e.time)-lead;else tgt=(dd-(e.remind==='1d'?1:0))*1440+480;
     const end=dd*1440+(e.time?mins(e.time)+e.dur:1440);
     if(tgt<=n&&n<end)fireRem(`en:${eKey(e)}:${e.date}:${e.remind}`,e.title+(e.status==='verify'?' (date not confirmed)':''),`${rel(e.date)}${e.time?' at '+e.time:''}${e.status==='verify'?'. Check this date at its source.':''}`);
   }
@@ -2118,8 +2120,8 @@ function ntfyPlan(){
   }
   for(const e of entries()){
     if(!e.date||e.done||e.dis||e.remind==='none'||e.rsvp==='no'||(e.snooze&&e.snooze>t0))continue;
-    const lead2={'15m':15,'1h':60}[e.remind];let at;
-    if(lead2&&e.time)at=atMs(e.date,mins(e.time)-lead2);else at=atMs(addDays(e.date,e.remind==='1d'?-1:0),480);
+    const lead2={'0m':0,'15m':15,'1h':60}[e.remind];let at;
+    if(lead2!==undefined&&e.time)at=atMs(e.date,mins(e.time)-lead2);else at=atMs(addDays(e.date,e.remind==='1d'?-1:0),480);
     add(`en:${eKey(e)}:${e.date}`,at,e.title+(e.status==='verify'?' (date not confirmed)':''),`${e.date===today()?'Today':fd(e.date)}${e.time?' at '+e.time:''}${e.status==='verify'?'. Check this date at its source.':''}`);
   }
   for(const i of S.items)if(i.next&&!i.nextDone&&!i.done&&!i.dismissed&&i.nextDue&&!(i.snooze&&i.snooze>t0))add(`na:${i.id}:${i.nextDue}`,atMs(i.nextDue,480),`Next action: ${i.next}`,`For ${i.title}.`);
@@ -2345,10 +2347,109 @@ Object.assign(A,{
 
 function render(){$('#view').innerHTML=VIEWS[UI.view]();renderNav();if(UI.view==='assistant'){const c=$('#chatlog');if(c)c.scrollTop=c.scrollHeight}}
 
+/* ================= Task alert times, at-the-time reminders, My courses ================= */
+const CRS=()=>S.courses=Array.isArray(S.courses)?S.courses:[];
+const crsPct=c=>c.total>0?Math.min(100,Math.round(100*(c.done||0)/c.total)):0;
+const crsDone=c=>c.status==='done'||(c.total>0&&(c.done||0)>=c.total);
+const CRS_QUICK=[['AI Skill Passport',''],['Deloitte Community',''],['Instagram lecture series','Instagram'],['YouTube playlist','YouTube']];
+{const _ta=F.taskAdd;F.taskAdd=(d,fm,e)=>{const n0=S.tasks.length;_ta(d,fm,e);const tm=d.get('dtime');if(tm&&TRE.test(tm)&&S.tasks.length>n0){const t=S.tasks[S.tasks.length-1];if(t&&!t.dueTime){t.dueTime=tm;save();render()}}}}
+A.taskTime=el=>{const t=S.tasks.find(x=>x.id===el.dataset.arg);if(!t||!t.due)return;
+ modal(`${mh('Alert time for this task',`Aura alerts you ${+S.notif.eventLead||15} minutes before and again at this time on ${fd(t.due)}. Leave it empty to go back to a morning alert.`)}
+ <form data-form="taskTimeSave" data-id="${t.id}" class="fgrid"><label class="f">Due time<input class="in" type="time" name="tm" value="${esc(t.dueTime||'')}"></label><div class="row" style="grid-column:1/-1;justify-content:flex-end"><button type="button" class="btn ghost" data-act="closeModal">Cancel</button><button class="btn pri">Save</button></div></form>`)};
+F.taskTimeSave=(d,f)=>{const t=S.tasks.find(x=>x.id===f.dataset.id);if(!t)return;const tm=d.get('tm');if(tm&&!TRE.test(tm)){toast('Enter a valid time');return}if(tm)t.dueTime=tm;else delete t.dueTime;save();closeM();render();toast(tm?'Alert time saved':'Alert time cleared')};
+function taskTimeRems(){
+  if(!S.notif.deadlines)return;
+  const t0=today(),n=nowM(),lead=+S.notif.eventLead||15;
+  for(const t of S.tasks){if(t.done||!t.due||!t.dueTime)continue;
+    const dd=between(t0,t.due);if(dd<0)continue;const at=dd*1440+mins(t.dueTime);
+    if(n>=at-lead&&n<at)fireRem(`tl:${t.id}:${t.due}:${t.dueTime}`,t.title,`Due in ${at-n} min, at ${t.dueTime}.`);
+    if(n>=at&&n<at+120)fireRem(`tn:${t.id}:${t.due}:${t.dueTime}`,`Due now: ${t.title}`,`It was due at ${t.dueTime}.`)}
+}
+function courseRems(){
+  if(!S.notif.deadlines||nowM()<480)return;const t0=today();
+  for(const c of CRS()){if(crsDone(c)||!c.end)continue;const d=between(t0,c.end);
+    if(d===0)fireRem(`cd0:${c.id}:${t0}`,`Course ends today: ${c.name}`,`${crsPct(c)}% done.`);
+    else if(d===1&&S.notif.lead!=='same')fireRem(`cd1:${c.id}:${t0}`,`Course ends tomorrow: ${c.name}`,`${crsPct(c)}% done.`)}
+}
+{const _c6=checkReminders;checkReminders=function(){_c6();try{taskTimeRems();courseRems()}catch(e){}}}
+{const _np=ntfyPlan;ntfyPlan=function(){
+  const out=_np(),now=Date.now(),horizon=now+NTFY_MAX_H*3600e3,lead=+S.notif.eventLead||15,seen=new Set(out.map(o=>o.seq));
+  const add=(base,at,title,body)=>{if(!(at>now+20000&&at<horizon))return;const seq='au'+hash36(base);if(seen.has(seq))return;seen.add(seq);const t=detailsOn()?title:GEN_TITLE,m=detailsOn()?body:GEN_MSG;out.push({seq,at,title:t,msg:m,sig:hash36(at+'|'+(detailsOn()?'d':'g')+'|'+(detailsOn()?t+'|'+m:''))})};
+  if(S.notif.deadlines){
+    for(const t of S.tasks){if(t.done||!t.due||!t.dueTime)continue;
+      add(`tl:${t.id}:${t.due}:${t.dueTime}`,atMs(t.due,mins(t.dueTime)-lead),t.title,`Due in ${lead} min, at ${t.dueTime}.`);
+      add(`tn:${t.id}:${t.due}:${t.dueTime}`,atMs(t.due,mins(t.dueTime)),`Due now: ${t.title}`,`It was due at ${t.dueTime}.`)}
+    for(const c of CRS()){if(crsDone(c)||!c.end)continue;
+      add(`cd0:${c.id}:${c.end}`,atMs(c.end,480),`Course ends today: ${c.name}`,`${crsPct(c)}% done.`);
+      if(S.notif.lead!=='same')add(`cd1:${c.id}:${c.end}`,atMs(addDays(c.end,-1),480),`Course ends tomorrow: ${c.name}`,`${crsPct(c)}% done.`)}}
+  return out.sort((a,b)=>a.at-b.at)}}
+/* My courses */
+function crsCard(c){
+  const p=crsPct(c),t0=today(),late=c.end&&c.end<t0&&!crsDone(c),fin=crsDone(c);
+  return `<section class="card"><header><h2>${esc(c.name)}</h2>${c.platform?`<span class="pill">${esc(c.platform)}</span>`:''}</header>
+  ${c.total>0?`<div class="sm muted">${c.done||0} of ${c.total} lessons · ${p}%</div><div style="height:8px;border-radius:99px;background:var(--line);margin:6px 0 10px;overflow:hidden"><div style="height:100%;width:${p}%;background:var(--accent)"></div></div>`:`<div class="sm muted">${c.done||0} lessons done so far</div>`}
+  <div class="row" style="gap:6px 8px;flex-wrap:wrap;margin-top:6px">${c.weekly?`<span class="pill acc">${hrs(c.weekly)} a week</span>`:''}${c.end?`<span class="pill ${late?'bad':''}">Finish by ${fd(c.end)}${late?' (late)':''}</span>`:''}${fin?'<span class="pill ok">Finished</span>':''}</div>
+  ${c.note?`<p class="sm muted" style="margin-top:8px">${esc(c.note)}</p>`:''}
+  <div class="row" style="margin-top:12px;flex-wrap:wrap">${fin?'':`<button class="btn sm pri" data-act="crsLesson" data-arg="${c.id}">+1 lesson done</button><button class="btn sm" data-act="crsPlan" data-arg="${c.id}">Add this week to my plan</button>`}${c.link?`<a class="btn sm" href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">Open course</a>`:''}<button class="btn sm ghost" data-act="crsEdit" data-arg="${c.id}">Edit</button><button class="btn sm ghost" data-act="crsDel" data-arg="${c.id}">Delete</button></div></section>`;
+}
+VIEWS.courses=()=>{
+  const L=CRS(),act=L.filter(c=>!crsDone(c)),dn=L.filter(crsDone);
+  return head('My courses','Every course you have joined, from any platform. Track progress and Aura will find time for it in your plan.',`<button class="btn pri" data-act="crsNew">${ico('plus',18)}Add course</button>`)
+  +`<section class="card"><header><h2>Quick add</h2></header><div class="row" style="flex-wrap:wrap">${CRS_QUICK.map((q,i)=>`<button class="btn sm" data-act="crsQuick" data-arg="${i}">${esc(q[0])}</button>`).join('')}</div><p class="sm faint" style="margin-top:8px">Tap one to start a course with that name, then fill in the details. Or use Add course for anything else, including lectures you follow on Instagram.</p></section>`
+  +(act.length?`<div class="grid2">${act.map(crsCard).join('')}</div>`:`<div class="empty"><b>No courses yet</b>Add the courses you have joined, then use "Add this week to my plan".</div>`)
+  +(dn.length?`<h3 style="margin:18px 0 8px">Finished</h3><div class="grid2">${dn.map(crsCard).join('')}</div>`:'');
+};
+function crsModal(c){
+  const x=c||{};
+  modal(`${mh(c?'Edit course':'Add a course','Anything you are learning: a platform course, a community programme, or a lecture series.')}
+  <form data-form="courseSave" data-id="${esc(x.id||'')}" class="fgrid">
+   <label class="f" style="grid-column:1/-1">Course name<input class="in" name="name" required maxlength="120" value="${esc(x.name||'')}" placeholder="AI Skill Passport"></label>
+   <label class="f">Where<input class="in" name="platform" list="crs-pl" maxlength="40" value="${esc(x.platform||'')}" placeholder="Instagram, Coursera, college"><datalist id="crs-pl"><option>Instagram</option><option>YouTube</option><option>Coursera</option><option>Udemy</option><option>NPTEL</option><option>College</option></datalist></label>
+   <label class="f">Hours a week<input class="in" type="number" name="weekly" min="0" max="40" step=".5" value="${x.weekly!=null?x.weekly:2}"></label>
+   <label class="f">Total lessons (optional)<input class="in" type="number" name="total" min="0" step="1" value="${x.total||''}"></label>
+   <label class="f">Lessons done<input class="in" type="number" name="done" min="0" step="1" value="${x.done||0}"></label>
+   <label class="f">Finish by (optional)<input class="in" type="date" name="end" value="${esc(x.end||'')}"></label>
+   <label class="f">Link (optional)<input class="in" type="url" name="link" placeholder="https://" value="${esc(x.link||'')}"></label>
+   <label class="f" style="grid-column:1/-1">Notes<textarea class="in" name="note" maxlength="400" style="min-height:60px;font-family:inherit">${esc(x.note||'')}</textarea></label>
+   <div class="row" style="grid-column:1/-1;justify-content:flex-end"><button type="button" class="btn ghost" data-act="closeModal">Cancel</button><button class="btn pri">Save</button></div></form>`,true);
+}
+function crsAddTask(c){
+  if(S.tasks.some(t=>t.course===c.id&&!t.done))return false;
+  const t0=today(),wk=addDays(t0,6-dow(t0));let due=wk;if(c.end&&c.end>=t0&&c.end<wk)due=c.end;
+  S.tasks.push({id:'t'+uid(),title:c.name+': study session',subject:c.name,due,est:c.weekly>0?c.weekly:1,prio:2,done:false,sched:0,course:c.id});return true;
+}
+F.courseSave=(d,f)=>{
+  const name=String(d.get('name')||'').trim().slice(0,120);if(!name){toast('Give the course a name');return}
+  const num=(k,max)=>Math.min(max,Math.max(0,Math.floor(+d.get(k)||0)));
+  let link=String(d.get('link')||'').trim();if(!/^https?:\/\//i.test(link))link='';
+  const end=String(d.get('end')||''),rec={name,platform:String(d.get('platform')||'').trim().slice(0,40),weekly:Math.min(40,Math.max(0,Math.round((+d.get('weekly')||0)*2)/2)),total:num('total',2000),done:num('done',2000),end:DRE.test(end)?end:'',link,note:String(d.get('note')||'').trim().slice(0,400)};
+  const id=f.dataset.id,ex=id&&CRS().find(c=>c.id===id);
+  if(ex){Object.assign(ex,rec);if(crsDone(ex))ex.status='done';else delete ex.status}else{const c={id:'c'+uid(),...rec};if(crsDone(c))c.status='done';CRS().push(c)}
+  save();closeM();render();toast('Course saved');
+};
+Object.assign(A,{
+ crsNew:()=>crsModal(),
+ crsQuick:el=>{const q=CRS_QUICK[+el.dataset.arg];if(!q)return;crsModal({name:q[0],platform:q[1],weekly:2})},
+ crsEdit:el=>{const c=CRS().find(x=>x.id===el.dataset.arg);if(c)crsModal(c)},
+ crsDel:el=>{const c=CRS().find(x=>x.id===el.dataset.arg);if(!c)return;if(!confirm('Delete "'+c.name+'"? This cannot be undone.'))return;S.courses=CRS().filter(x=>x.id!==c.id);save();render()},
+ crsLesson:el=>{const c=CRS().find(x=>x.id===el.dataset.arg);if(!c)return;c.done=(c.done||0)+1;if(c.total>0&&c.done>=c.total){c.status='done';toast('Course finished. Well done.')}else toast('Lesson logged');save();render()},
+ crsPlan:el=>{const c=CRS().find(x=>x.id===el.dataset.arg);if(!c)return;if(crsAddTask(c)){save();render();toast('Added to your tasks. Open Smart plan and tap Generate plan to place it.')}else toast('This week is already in your tasks')},
+ crsPlanAll:()=>{let n=0;for(const c of CRS())if(!crsDone(c)&&crsAddTask(c))n++;save();render();toast(n?`Added ${n} course${n>1?'s':''} to your tasks. Tap Generate plan to place them.`:'Nothing new to add')}
+});
+{const _vp9=VIEWS.plan;VIEWS.plan=()=>{
+  const h=_vp9(),L=CRS().filter(c=>!crsDone(c));
+  const card=`<section class="card"><header><h2>Your courses</h2><button class="btn sm ghost" data-act="nav" data-arg="courses">Manage</button></header>`+(L.length?`<p class="sm muted">Add a course's weekly time as a task, then tap Generate plan to place it around your classes.</p>`+L.map(c=>`<div class="logrow"><div style="min-width:0"><div style="font-weight:650">${esc(c.name)}</div><div class="sm muted">${c.weekly?hrs(c.weekly)+' a week':'No weekly time set'} · ${crsPct(c)}%${c.end?' · finish by '+fd(c.end):''}</div></div><button class="btn sm" data-act="crsPlan" data-arg="${c.id}">Add this week</button></div>`).join('')+`<div class="row" style="margin-top:10px"><button class="btn sm pri" data-act="crsPlanAll">Add all to my tasks</button></div>`:`<p class="sm muted">No courses yet. Add the ones you have joined and Aura will schedule time for them.</p><button class="btn sm" data-act="nav" data-arg="courses">Add courses</button>`)+`</section>`;
+  const m='<section class="card"><header><h2>Suggestions</h2>';
+  return h.includes(m)?h.replace(m,card+m):h+card}}
+NAV.splice(NAV.findIndex(n=>n[0]==='hacks')+1,0,['courses','My courses','book']);
+COLS.push(['courses','Courses']);
+{const _ai=applyImport;applyImport=function(d,mode){const n=_ai(d,mode);if(mode==='replace'){S.courses=Array.isArray(d.courses)?d.courses:[];ensureNew(S)}return n}}
+{const _vb=validateBackup;validateBackup=function(raw){const r=_vb(raw);if(r&&r.d&&r.d.courses!==undefined){const c=r.d.courses;if(!Array.isArray(c))r.errs.push('"courses" must be a list.');else c.forEach((x,i)=>{if(!x||typeof x!=='object'||typeof x.id!=='string'||typeof x.name!=='string'||!x.name.trim())r.errs.push(`courses #${i+1}: missing id or name.`);else if(x.end&&!BDRE.test(x.end))r.errs.push(`courses #${i+1}: bad date.`)})}return r}}
+
 try{const t=localStorage.getItem(TKEY);if(t)document.documentElement.dataset.theme=t;const v=localStorage.getItem('aurastudent.view');if(v&&VIEWS[v])UI.view=v}catch(e){}
 render();
 setInterval(()=>{if(UI.view==='today'&&!$('#modal').innerHTML&&!document.activeElement.closest('form'))render()},60000);
 setTimeout(checkReminders,1500);setInterval(checkReminders,30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkReminders()});
 </script>
-</body></html>
+
 
