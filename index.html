@@ -394,6 +394,7 @@ function freshStart(){const s=seed();s.events=[];s.tasks=[];s.habits=s.habits.ma
 function ensureNew(s){
   if(s.profile&&typeof s.profile==='object'&&s.profile.term===undefined)s.profile.term='';
   s.courses=Array.isArray(s.courses)?s.courses:[];
+  s.push=Object.assign({on:false,url:'',token:'',id:'',details:true,last:0,err:'',count:0},s.push||{});
   s.items=Array.isArray(s.items)?s.items:[];s.hacks=Array.isArray(s.hacks)?s.hacks:[];s.comms=Array.isArray(s.comms)?s.comms:[];
   s.templates=Array.isArray(s.templates)?s.templates:DEFTPL();
   s.att=s.att||{};s.att.snooze=s.att.snooze||{};
@@ -993,7 +994,7 @@ function showRems(){$('#rems').innerHTML=REM.map((r,i)=>`<div class="rem" role="
 function fireRem(key,title,body){
   if(S.fired[key])return;S.fired[key]=Date.now();save();
   REM.push({title,body});showRems();beep();
-  try{if('Notification' in window&&Notification.permission==='granted'){if(navigator.serviceWorker&&navigator.serviceWorker.ready)navigator.serviceWorker.ready.then(g=>g.showNotification(title,{body,icon:'icon-192.png',badge:'icon-192.png',tag:key})).catch(()=>{});else new Notification(title,{body})}}catch(e){}
+  try{if(!(S.push&&S.push.on)&&'Notification' in window&&Notification.permission==='granted'){if(navigator.serviceWorker&&navigator.serviceWorker.ready)navigator.serviceWorker.ready.then(g=>g.showNotification(title,{body,icon:'icon-192.png',badge:'icon-192.png',tag:key})).catch(()=>{});else new Notification(title,{body})}}catch(e){}
 }
 function checkReminders(){
   const n=nowM(),t0=today(),lead=+S.notif.eventLead||15;
@@ -2452,6 +2453,85 @@ NAV.splice(NAV.findIndex(n=>n[0]==='hacks')+1,0,['courses','My courses','book'])
 COLS.push(['courses','Courses']);
 {const _ai=applyImport;applyImport=function(d,mode){const n=_ai(d,mode);if(mode==='replace'){S.courses=Array.isArray(d.courses)?d.courses:[];ensureNew(S)}return n}}
 {const _vb=validateBackup;validateBackup=function(raw){const r=_vb(raw);if(r&&r.d&&r.d.courses!==undefined){const c=r.d.courses;if(!Array.isArray(c))r.errs.push('"courses" must be a list.');else c.forEach((x,i)=>{if(!x||typeof x!=='object'||typeof x.id!=='string'||typeof x.name!=='string'||!x.name.trim())r.errs.push(`courses #${i+1}: missing id or name.`);else if(x.end&&!BDRE.test(x.end))r.errs.push(`courses #${i+1}: bad date.`)})}return r}}
+
+/* ================= Push alerts through your own server (Cloudflare Worker) ================= */
+const PU=()=>{const d={on:false,url:'',token:'',id:'',details:true,last:0,err:'',count:0};if(!S.push||typeof S.push!=='object')S.push={};for(const k in d)if(S.push[k]===undefined)S.push[k]=d[k];return S.push};
+const pushUrlOK=u=>/^https:\/\/[^\s\/]+(\/[^\s]*)?$/.test(u||'');
+const pushBase=()=>PU().url.replace(/\/+$/,'');
+const b64uToU8=s=>{const p=s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4),r=atob(p),u=new Uint8Array(r.length);for(let i=0;i<r.length;i++)u[i]=r.charCodeAt(i);return u};
+const u8ToB64u=u=>btoa(String.fromCharCode(...new Uint8Array(u))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const pushErr=e=>{const m=e&&e.message;return(!m||m==='Failed to fetch'||m==='Load failed'||m==='NetworkError when attempting to fetch resource.')?'Could not reach your push server. Check the address and your connection.':m};
+async function pushApi(path,body){
+  const P=PU(),r=await fetch(pushBase()+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+P.token},body:JSON.stringify(body)});
+  let j={};try{j=await r.json()}catch(e){}
+  if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
+  return j;
+}
+async function pushSubscribe(){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window))throw new Error('This browser cannot receive push alerts. On iPhone, add the app to the Home Screen first.');
+  const reg=await Promise.race([navigator.serviceWorker.ready,new Promise((_,j)=>setTimeout(()=>j(new Error('Open the installed https version of the app to turn this on.')),8000))]);
+  const kr=await fetch(pushBase()+'/vapid');if(!kr.ok)throw new Error('Could not reach the server. Check the address.');
+  const key=(await kr.json()).key;if(!key)throw new Error('The server did not return a key.');
+  let sub=await reg.pushManager.getSubscription();
+  if(sub){const cur=sub.options&&sub.options.applicationServerKey;if(cur&&u8ToB64u(cur)!==key){await sub.unsubscribe();sub=null}}
+  if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uToU8(key)});
+  return (await pushApi('/subscribe',{sub:sub.toJSON()})).id;
+}
+let pushBusy=false,pushT;
+async function pushSync(manual){
+  const P=PU();if(!P.on||pushBusy)return;
+  if(!navigator.onLine){if(manual)toast('You are offline. Alerts will sync when you are back online.');return}
+  pushBusy=true;
+  try{
+    P.id=await pushSubscribe();
+    const keep=S.ntfy.privacy;S.ntfy.privacy=P.details?'details':'generic';let plan;try{plan=ntfyPlan()}finally{S.ntfy.privacy=keep}
+    const r=await pushApi('/schedule',{id:P.id,items:plan.slice(0,200).map(p=>({seq:p.seq,at:p.at,title:p.title,msg:p.msg}))});
+    P.last=Date.now();P.err='';P.count=r.scheduled||0;
+  }catch(e){P.err=pushErr(e)}
+  pushBusy=false;rawSave();
+  if(manual)toast(P.err?'Could not sync: '+P.err:`Synced. ${P.count} upcoming alert${P.count===1?'':'s'} on your server.`);
+  if(UI.view==='profile'&&!$('#modal').innerHTML)render();
+}
+const pushLater=()=>{clearTimeout(pushT);pushT=setTimeout(()=>pushSync(false),2500)};
+{const _sv=save;save=function(){_sv();if(PU().on)pushLater()}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&PU().on&&Date.now()-PU().last>20*60000)pushSync(false)});
+setTimeout(()=>{if(PU().on)pushSync(false)},3000);
+function pushCard(){
+  const P=PU(),on=P.on;
+  return `<section class="card" aria-labelledby="pu-h"><header><h2 id="pu-h">Push alerts that work when the app is closed</h2><span class="pill ${on?'ok':''}">${on?'On':'Off'}</span></header>
+   <p class="sm muted">Alerts arrive like any app's notifications, even when AuraStudent is closed or the screen is off. They come from a small server you set up once in your own free Cloudflare account. <a href="push-setup.html" target="_blank" rel="noopener">Open the setup guide</a>. Use this or phone alerts with ntfy, not both.</p>
+   ${on?`<div class="sm" style="margin-top:10px">${P.err?`<span style="color:var(--bad)">${esc(P.err)}</span>`:`${P.count} upcoming alert${P.count===1?'':'s'} are on your server${P.last?', last synced '+ago(P.last):''}.`}</div>
+    <label class="row" style="gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" ${P.details?'checked':''} data-act="pushDetails"><span class="sm">Show the real title and time in alerts. Turn off to show only "You have an upcoming AuraStudent item."</span></label>
+    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="pushTest">Send a test</button><button class="btn" data-act="pushSyncNow">Sync now</button><button class="btn ghost" data-act="pushOff">Turn off</button></div>`
+   :`<div class="fgrid" style="margin-top:10px"><label class="f" style="grid-column:1/-1">Server address<input class="in" id="pu-url" value="${esc(P.url)}" placeholder="https://aurastudent-push.yourname.workers.dev" autocomplete="off" spellcheck="false"></label>
+    <label class="f" style="grid-column:1/-1">Access token<input class="in" id="pu-tok" type="password" value="${esc(P.token)}" autocomplete="off" spellcheck="false"></label></div>
+    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="pushOn">Turn on push alerts</button></div>${P.err?`<p class="sm" style="color:var(--bad);margin-top:8px">${esc(P.err)}</p>`:''}`}
+   <p class="sm faint" style="margin-top:10px">Your reminder times and text are stored on your own server so it can deliver them. Nothing is sent anywhere else. Delivery depends on your phone, its battery settings and the network.</p></section>`;
+}
+{const _vp10=VIEWS.profile;VIEWS.profile=()=>_vp10()+pushCard()}
+Object.assign(A,{
+ pushOn:async()=>{
+   const P=PU(),url=($('#pu-url')||{}).value.trim().replace(/\/+$/,''),tok=($('#pu-tok')||{}).value.trim();
+   if(!pushUrlOK(url)){toast('Enter the server address, starting with https://');return}
+   if(!tok){toast('Enter the access token');return}
+   if(!('Notification' in window)){toast('This browser cannot show notifications.');return}
+   let perm='default';try{perm=await Notification.requestPermission()}catch(e){}
+   if(perm!=='granted'){P.err='Notifications are blocked. Allow them for this site in your browser settings, then try again.';rawSave();render();return}
+   P.url=url;P.token=tok;P.err='';
+   try{P.id=await pushSubscribe();P.on=true;save();toast('Push alerts are on. Syncing...');await pushSync(true)}
+   catch(e){P.on=false;P.err=pushErr(e);rawSave();render();toast('Could not turn on: '+P.err)}
+ },
+ pushTest:async()=>{try{await pushApi('/test',{id:PU().id});toast('Test sent. It should appear in a few seconds.')}catch(e){toast('Test failed: '+pushErr(e))}},
+ pushSyncNow:()=>pushSync(true),
+ pushDetails:()=>{const P=PU();P.details=!P.details;save();render()},
+ pushOff:async()=>{
+   const P=PU();try{await pushApi('/unsubscribe',{id:P.id})}catch(e){}
+   try{const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();if(sub)await sub.unsubscribe()}catch(e){}
+   P.on=false;P.id='';P.err='';P.count=0;rawSave();render();toast('Push alerts are off');
+ }
+});
+{const _ai2=applyImport;applyImport=function(d,mode){const kp=S.push;const n=_ai2(d,mode);if(kp)S.push=kp;return n}}
+{const _eo=exportObj;exportObj=function(){const o=_eo();if(o&&o.data)delete o.data.push;return o}}
 
 try{const t=localStorage.getItem(TKEY);if(t)document.documentElement.dataset.theme=t;const v=localStorage.getItem('aurastudent.view');if(v&&VIEWS[v])UI.view=v}catch(e){}
 render();
