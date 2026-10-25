@@ -2365,16 +2365,23 @@ function taskTimeRems(){
     if(n>=at-lead&&n<at)fireRem(`tl:${t.id}:${t.due}:${t.dueTime}`,t.title,`Due in ${at-n} min, at ${t.dueTime}.`);
     if(n>=at&&n<at+120)fireRem(`tn:${t.id}:${t.due}:${t.dueTime}`,`Due now: ${t.title}`,`It was due at ${t.dueTime}.`)}
 }
+function sugRems(){
+  if(!S.notif.events)return;
+  const t0=today(),n=nowM(),lead=+S.notif.eventLead||15;
+  for(const g of (S.sugs||[])){if(!g.date||!g.start)continue;const dd=between(t0,g.date);if(dd<0)continue;const st=dd*1440+mins(g.start);
+    if(n>=st-lead&&n<st)fireRem(`sg:${g.id}:${g.date}:${g.start}`,g.title,`Planned study starts in ${st-n} min, at ${g.start}.`)}
+}
 function courseRems(){
   if(!S.notif.deadlines||nowM()<480)return;const t0=today();
   for(const c of CRS()){if(crsDone(c)||!c.end)continue;const d=between(t0,c.end);
     if(d===0)fireRem(`cd0:${c.id}:${t0}`,`Course ends today: ${c.name}`,`${crsPct(c)}% done.`);
     else if(d===1&&S.notif.lead!=='same')fireRem(`cd1:${c.id}:${t0}`,`Course ends tomorrow: ${c.name}`,`${crsPct(c)}% done.`)}
 }
-{const _c6=checkReminders;checkReminders=function(){_c6();try{taskTimeRems();courseRems()}catch(e){}}}
+{const _c6=checkReminders;checkReminders=function(){_c6();try{taskTimeRems();sugRems();courseRems()}catch(e){}}}
 {const _np=ntfyPlan;ntfyPlan=function(){
   const out=_np(),now=Date.now(),horizon=now+NTFY_MAX_H*3600e3,lead=+S.notif.eventLead||15,seen=new Set(out.map(o=>o.seq));
   const add=(base,at,title,body)=>{if(!(at>now+20000&&at<horizon))return;const seq='au'+hash36(base);if(seen.has(seq))return;seen.add(seq);const t=detailsOn()?title:GEN_TITLE,m=detailsOn()?body:GEN_MSG;out.push({seq,at,title:t,msg:m,sig:hash36(at+'|'+(detailsOn()?'d':'g')+'|'+(detailsOn()?t+'|'+m:''))})};
+  if(S.notif.events)for(const g of (S.sugs||[])){if(g.date&&g.start)add(`sg:${g.id}:${g.date}:${g.start}`,atMs(g.date,mins(g.start)-lead),g.title,`Planned study starts at ${g.start}.`)}
   if(S.notif.deadlines){
     for(const t of S.tasks){if(t.done||!t.due||!t.dueTime)continue;
       add(`tl:${t.id}:${t.due}:${t.dueTime}`,atMs(t.due,mins(t.dueTime)-lead),t.title,`Due in ${lead} min, at ${t.dueTime}.`);
