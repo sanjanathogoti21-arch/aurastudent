@@ -394,6 +394,7 @@ function freshStart(){const s=seed();s.events=[];s.tasks=[];s.habits=s.habits.ma
 function ensureNew(s){
   if(s.profile&&typeof s.profile==='object'&&s.profile.term===undefined)s.profile.term='';
   s.courses=Array.isArray(s.courses)?s.courses:[];
+  s.voice=Object.assign({wake:false,speak:true},s.voice||{});
   s.push=Object.assign({on:false,url:'',token:'',id:'',details:true,last:0,err:'',count:0},s.push||{});
   s.items=Array.isArray(s.items)?s.items:[];s.hacks=Array.isArray(s.hacks)?s.hacks:[];s.comms=Array.isArray(s.comms)?s.comms:[];
   s.templates=Array.isArray(s.templates)?s.templates:DEFTPL();
@@ -2532,6 +2533,247 @@ Object.assign(A,{
 });
 {const _ai2=applyImport;applyImport=function(d,mode){const kp=S.push;const n=_ai2(d,mode);if(kp)S.push=kp;return n}}
 {const _eo=exportObj;exportObj=function(){const o=_eo();if(o&&o.data)delete o.data.push;return o}}
+
+/* ================= Voice commands: tap-to-talk and optional "Hey Aura" while the app is open ================= */
+const VC=()=>{const d={wake:false,speak:true};if(!S.voice||typeof S.voice!=='object')S.voice={};for(const k in d)if(S.voice[k]===undefined)S.voice[k]=d[k];return S.voice};
+const V_NUM={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12};
+const V_NW='one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve';
+const V_MON='january|february|march|april|may|june|july|august|september|october|november|december';
+const V_MS='jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec';
+const V_WD=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+const V_VIEWS=[['hacks',/\bhackathons?\b/i],['courses',/\bcourses?\b/i],['plan',/\b(smart plan|study plan|plan)\b/i],['calendar',/\b(calendar|schedule|timetable)\b/i],['tasks',/\b(tasks?|to-?do|todo|deadlines?)\b/i],['captured',/\b(captured|capture|inbox)\b/i],['comms',/\b(communit(?:y|ies)|events)\b/i],['templates',/\btemplates?\b/i],['notes',/\b(notes?|quiz)\b/i],['discover',/\b(discover|opportunities)\b/i],['insights',/\b(insights?|habits?|progress)\b/i],['buddy',/\b(study )?buddy\b/i],['profile',/\b(profile|settings|backup|reminders?|notifications?)\b/i],['assistant',/\b(assistant|chat)\b/i],['today',/\b(today|home|dashboard)\b/i]];
+const vT12=t=>{const [h,m]=t.split(':').map(Number),ap=h>=12?'pm':'am',h12=h%12||12;return m?`${h12}:${String(m).padStart(2,'0')} ${ap}`:`${h12} ${ap}`};
+const vDateSay=d=>{const t0=today();return d===t0?'today':d===addDays(t0,1)?'tomorrow':fd(d)};
+function vNorm(s){
+  s=String(s||'').replace(/\b([ap])\.\s?m\.?/gi,'$1m').replace(/(?<!\d)\.|\.(?!\d)/g,' ').replace(/[,!?;]/g,' ');
+  s=s.replace(new RegExp('\\b('+V_NW+')\\b(?=\\s*(?:am\\b|pm\\b|o\'?clock|hours?\\b|hrs?\\b|minutes?\\b|mins?\\b|days?\\b))','gi'),m=>V_NUM[m.toLowerCase()]);
+  s=s.replace(new RegExp('\\b(at|by|from|to|till|until)\\s+('+V_NW+')\\b','gi'),(m,a,b)=>a+' '+V_NUM[b.toLowerCase()]);
+  s=s.replace(/\bhalf an? hour\b/gi,'0.5 hours').replace(/\ban? hour\b/gi,'1 hour').replace(/\b(\d+)\s*o'?clock\b/gi,'$1');
+  return s.replace(/\s+/g,' ').trim();
+}
+const vClean=s=>s.replace(/\s+/g,' ').trim().replace(/^(?:to|that|about|for|called|named|on|by|at|due|the)\s+/i,'').replace(/\s+(?:on|by|due|at|for|from|before|to|in|and|the)\s*$/i,'').replace(/^(?:to|that|about|for|called|named)\s+/i,'').trim();
+function vDur(t){
+  const m=/\bfor\s+(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?)\b/i.exec(t);if(!m)return {mins:0,rest:t};
+  const n=parseFloat(m[1]),u=m[2].toLowerCase();return {mins:Math.round(u[0]==='h'?n*60:n),hours:u[0]==='h'?n:n/60,rest:t.replace(m[0],' ')};
+}
+function vDate(t){
+  const t0=today();let m;
+  if(m=/\bday after tomorrow\b/i.exec(t))return {date:addDays(t0,2),rest:t.replace(m[0],' ')};
+  if(m=/\btomorrow\b/i.exec(t))return {date:addDays(t0,1),rest:t.replace(m[0],' ')};
+  if(m=/\b(?:today|tonight|this (?:morning|afternoon|evening))\b/i.exec(t))return {date:t0,rest:t.replace(m[0],' ')};
+  if(m=/\bin\s+(\d+)\s+days?\b/i.exec(t))return {date:addDays(t0,+m[1]),rest:t.replace(m[0],' ')};
+  if(m=/\bnext week\b/i.exec(t))return {date:addDays(t0,7),rest:t.replace(m[0],' ')};
+  if(m=new RegExp('\\b(?:(?:on|this|next|coming)\\s+)?('+V_WD.join('|')+')\\b','i').exec(t)){let diff=(V_WD.indexOf(m[1].toLowerCase())-dow(t0)+7)%7;if(diff===0)diff=7;return {date:addDays(t0,diff),rest:t.replace(m[0],' ')}}
+  const mk=(d,mo)=>{const y0=new Date().getFullYear();let y=y0;const idx=(s=>{s=s.toLowerCase();const i=V_MON.split('|').findIndex(x=>x.startsWith(s.slice(0,3)));return i})(mo);if(idx<0||d<1||d>31)return null;
+    const f=yy=>{const dt=new Date(yy,idx,d);return dt.getMonth()===idx&&dt.getDate()===d?`${yy}-${n2(idx+1)}-${n2(d)}`:null};let r=f(y);if(r&&r<t0)r=f(y+1);return r};
+  const MN='('+V_MON+'|'+V_MS+')';
+  if(m=new RegExp('\\b(?:on\\s+)?(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:of\\s+)?'+MN+'\\b','i').exec(t)){const r=mk(+m[1],m[2]);if(r)return {date:r,rest:t.replace(m[0],' ')}}
+  if(m=new RegExp('\\b'+MN+'\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b','i').exec(t)){const r=mk(+m[2],m[1]);if(r)return {date:r,rest:t.replace(m[0],' ')}}
+  if(m=/\bon\s+the\s+(\d{1,2})(?:st|nd|rd|th)\b/i.exec(t)){const d=+m[1],y=new Date().getFullYear(),mo=new Date().getMonth();let r=`${y}-${n2(mo+1)}-${n2(d)}`;if(d>=1&&d<=31&&new Date(y,mo,d).getDate()===d){if(r<t0){const nm=new Date(y,mo+1,d);r=`${nm.getFullYear()}-${n2(nm.getMonth()+1)}-${n2(nm.getDate())}`}return {date:r,rest:t.replace(m[0],' ')}}}
+  return {date:null,rest:t};
+}
+const vH=(h,ap)=>{h=+h;if(ap){ap=ap.toLowerCase();h=h%12+(ap==='pm'?12:0)}return h};
+const vHM=(h,m)=>`${n2(h)}:${n2(m||0)}`;
+function vRange(t){
+  const m=/\bfrom\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s+(?:to|till|until)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.exec(t);if(!m)return null;
+  const ap2=m[6].toLowerCase(),ap1=(m[3]||'').toLowerCase()||(vH(m[1],ap2)>vH(m[4],ap2)?(ap2==='pm'?'am':'pm'):ap2);
+  const s=vH(m[1],ap1)*60+(+m[2]||0),e=vH(m[4],ap2)*60+(+m[5]||0);if(e<=s||s>1439||e>1439)return null;
+  return {start:vHM(Math.floor(s/60),s%60),end:vHM(Math.floor(e/60),e%60),rest:t.replace(m[0],' ')};
+}
+function vTime(t){
+  let m;
+  if(m=/\b(?:at\s+)?noon\b/i.exec(t))return {time:'12:00',rest:t.replace(m[0],' ')};
+  if(m=/\b(?:at\s+)?midnight\b/i.exec(t))return {time:'23:59',rest:t.replace(m[0],' ')};
+  if(m=/(?:\b(?:at|by|from|around|before|until|till)\s+)?\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.exec(t)){const h=vH(m[1],m[3]);if(+m[1]>=1&&+m[1]<=12&&(+m[2]||0)<60)return {time:vHM(h,+m[2]||0),rest:t.replace(m[0],' ')}}
+  if(m=/\b(?:at|by|from|around)\s+([01]?\d|2[0-3]):([0-5]\d)\b/i.exec(t))return {time:vHM(+m[1],+m[2]),rest:t.replace(m[0],' ')};
+  if(m=/\b(?:at|by)\s+(\d{1,2})(?![\d:]|\s*(?:hours?|hrs?|minutes?|mins?|days?|%))/i.exec(t)){let h=+m[1];if(h>=1&&h<=23){if(h<=6)h+=12;return {time:vHM(h,0),rest:t.replace(m[0],' ')}}}
+  return {time:null,rest:t};
+}
+const V_STOP=new Set(['the','a','an','my','task','tasks','to','of','for','is','as','that','this','please','assignment','homework']);
+const vToks=s=>s.toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w&&!V_STOP.has(w));
+function vMatch(q,list,name){
+  const qt=vToks(q);if(!qt.length)return {none:true};
+  const sc=list.map(x=>{const w=new Set(vToks(name(x)));return [x,qt.filter(k=>w.has(k)||[...w].some(y=>y.length>3&&(y.startsWith(k)||k.startsWith(y)))).length]}).filter(a=>a[1]>0).sort((a,b)=>b[1]-a[1]);
+  if(!sc.length)return {none:true};
+  const need=Math.max(1,Math.ceil(qt.length/2));if(sc[0][1]<need)return {none:true};
+  if(sc[1]&&sc[1][1]===sc[0][1])return {many:sc.filter(a=>a[1]===sc[0][1]).slice(0,3).map(a=>a[0])};
+  return {one:sc[0][0]};
+}
+const V_TYPES={class:'class',lecture:'class',lab:'class',exam:'exam',test:'exam','study session':'study','study block':'study',study:'study',session:'study',meeting:'personal',event:'personal',appointment:'personal',hackathon:'hackathon'};
+function vParse(raw){
+  let t=vNorm(raw);
+  t=t.replace(/^(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b\s*/i,'').replace(/^(?:please|can you|could you|would you|will you|i want you to|i would like to|i'd like to|i want to)\s+/i,'').replace(/\s+please$/i,'').trim();
+  if(!t)return {kind:'empty'};
+  let m;
+  if(/^(?:help|what can (?:i|you) (?:say|do)|how do i use (?:this|voice))\b/i.test(t))return {kind:'help'};
+  if(m=/^(?:log|add|record)\s+(?:a\s+|one\s+|1\s+)?lesson\b\s*(?:for|of|in|on)?\s*(.*)$/i.exec(t)||/^i\s+(?:finished|completed|did)\s+(?:a\s+|one\s+)?lesson\s*(?:for|of|in|on)?\s*(.*)$/i.exec(t))return {kind:'lesson',q:m[1].trim()};
+  if(m=/^(?:add|create|join|start|new)\s+(?:a\s+|the\s+|my\s+)?(?:new\s+)?course\b[:\s]*(?:called\s+|named\s+|on\s+|for\s+)?(.*)$/i.exec(t)||/^i\s+(?:joined|started|enrolled in)\s+(?:the\s+|a\s+)?(.*?)(?:\s+course)?$/i.exec(t)){
+    let r=m[1],wk=null,w;if(w=/(\d+(?:\.\d+)?)\s*hours?\s*(?:a|per|every)\s*week/i.exec(r)){wk=parseFloat(w[1]);r=r.replace(w[0],' ')}
+    const d=vDate(r);const name=vClean(d.rest);if(!name)return {kind:'say',say:'What is the course called? Say, add course followed by its name.'};
+    return {kind:'course',name,end:d.date||'',weekly:wk};
+  }
+  if(m=/^(?:mark|complete|finish|tick|check off|done with|i(?:'ve| have)?\s+(?:finished|completed|done))\s+(?:the\s+|my\s+)?(?:task\s+)?(.*?)(?:\s+(?:as\s+)?(?:done|complete|completed|finished))?$/i.exec(t)||/^(.+?)\s+(?:is|are)\s+(?:done|finished|complete|completed)$/i.exec(t))return {kind:'done',q:m[1].trim()};
+  if(m=/^(?:what(?:'s| is)?|whats|tell me|read(?: out)?|do i have|how many|any)\b(.*)$/i.exec(t)){
+    const r=m[1];if(/\b(next|upcoming)\b/i.test(r)&&!/\btomorrow\b/i.test(r))return {kind:'next'};
+    if(/\b(today|tomorrow|schedule|agenda|plan|due|deadlines?|tasks?|classes|class|on|have|got|week)\b/i.test(r)||!r.trim()){const d=vDate(r);return {kind:'summary',date:d.date||today()}}
+  }
+  const tk=/^(?:add|create|make|new|set|put)\s+(?:a\s+|an\s+|the\s+|my\s+)?(?:new\s+)?(?:task|to-?do|todo|reminder|deadline|assignment)\b[:\s]*(.*)$/i.exec(t)||/^remind me\s+(.*)$/i.exec(t)||/^i\s+(?:need|have|got|must|should)\s+to\s+(.*)$/i.exec(t);
+  const ev=!tk&&/^(?:add|create|schedule|book|set up|put|plan|block)\s+(?:a\s+|an\s+|the\s+|my\s+)?(?:new\s+)?(class|lecture|exam|test|study session|study block|study|meeting|event|session|hackathon|appointment|lab)?\s*(.*)$/i.exec(t);
+  if(tk||ev){
+    let r=tk?tk[1]:ev[2],typeW=ev&&ev[1]?ev[1].toLowerCase():'';
+    const rg=ev?vRange(r):null;if(rg)r=rg.rest;
+    const du=vDur(r);r=du.rest;
+    let prio=2;if(/\b(?:high priority|urgent|important)\b/i.test(r)){prio=3;r=r.replace(/\b(?:high priority|urgent|important)\b/i,' ')}else if(/\blow priority\b/i.test(r)){prio=1;r=r.replace(/\blow priority\b/i,' ')}
+    const dd=vDate(r);r=dd.rest;
+    let tm=rg?{time:rg.start,rest:r}:vTime(r);r=tm.rest;
+    const title=vClean(r);
+    const sched=!!ev&&/^(?:schedule|book|block)\b/i.test(t),isTask=!!tk||(!sched&&!typeW&&!tm.time)||(/\b(?:due|deadline|submit|assignment)\b/i.test(t)&&!typeW);
+    if(isTask){
+      if(!title)return {kind:'say',say:'What is the task? Say, add task, then what it is and when it is due.'};
+      let date=dd.date,time=tm.time;
+      if(!date){if(time){const now=new Date(),nm=now.getHours()*60+now.getMinutes();date=mins(time)>nm?today():addDays(today(),1)}else date=addDays(today(),1)}
+      return {kind:'task',title,date,time,est:du.hours||null,prio};
+    }
+    if(!tm.time)return {kind:'say',say:'What time? Try again with a time, for example: schedule '+(title||typeW||'physics lab')+' tomorrow at 4 pm.'};
+    const type=V_TYPES[typeW]||'personal';let date=dd.date;
+    if(!date){const now=new Date(),nm=now.getHours()*60+now.getMinutes();date=mins(tm.time)>nm?today():addDays(today(),1)}
+    let dur=rg?mins(rg.end)-mins(rg.start):du.mins||(type==='exam'?120:60);const s=mins(tm.time);if(s+dur>1439)dur=Math.max(15,1439-s);
+    const e=s+dur;const gen=/^(?:meeting|appointment|event|session)$/.test(typeW),nm=gen?(typeW[0].toUpperCase()+typeW.slice(1)+(title?' '+title:'')):(title||(typeW?typeW[0].toUpperCase()+typeW.slice(1):'Event'));return {kind:'event',title:nm,type,date,start:tm.time,end:hm(e)};
+  }
+  const nav=/^(?:open|go to|go|show me|show|take me to|switch to|launch|view|goto)\s+(?:my\s+|the\s+|me\s+)?(.*)$/i.exec(t);
+  const target=nav?nav[1]:t;
+  if(!nav&&target.split(' ').length>3)return {kind:'ask',q:raw};
+  for(const [v,re] of V_VIEWS)if(re.test(target))return {kind:'nav',view:v};
+  return {kind:'ask',q:raw};
+}
+/* ---- feedback ---- */
+let vBannerT,VU=null;
+function vBanner(text,undo,live){
+  let b=$('#vbanner');if(!b){b=document.createElement('div');b.id='vbanner';b.setAttribute('role','status');b.setAttribute('aria-live','polite');document.body.appendChild(b)}
+  VU=undo||null;clearTimeout(vBannerT);
+  b.innerHTML=`<span class="vdot ${live?'live':''}"></span><span class="vtx">${esc(text)}</span>${undo?'<button class="vbt" data-act="voiceUndo">Undo</button>':''}<button class="vbt" data-act="voiceClose" aria-label="Close">${'×'}</button>`;
+  b.classList.add('on');if(!live)vBannerT=setTimeout(()=>b.classList.remove('on'),undo?9000:6000);
+}
+function vSay(text,undo){vBanner(text,undo);if(VC().speak&&window.speechSynthesis){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text.slice(0,400));u.lang='en-IN';speechSynthesis.speak(u)}catch(e){}}}
+function vDaySummary(date){
+  const ev=occ(date).filter(e=>e.type!=='rest').sort((a,b)=>mins(a.start)-mins(b.start));
+  const tk=S.tasks.filter(t=>!t.done&&t.due&&(t.due===date||(date===today()&&t.due<date)));
+  const lbl=vDateSay(date);if(!ev.length&&!tk.length)return `Nothing planned for ${lbl}.`;
+  const p=[];if(ev.length)p.push(`${ev.length} event${ev.length>1?'s':''}: ${ev.slice(0,5).map(e=>`${e.title} at ${vT12(e.start)}`).join(', ')}`);
+  if(tk.length)p.push(`${tk.length} task${tk.length>1?'s':''} due: ${tk.slice(0,5).map(t=>t.title+(t.dueTime?' at '+vT12(t.dueTime):'')).join(', ')}`);
+  return `For ${lbl}, ${p.join('. ')}.`;
+}
+function vExec(c){
+  switch(c.kind){
+   case 'empty':return;
+   case 'say':return vSay(c.say);
+   case 'help':return vSay('Try: open tasks. Add task physics lab tomorrow at 5 pm. Schedule class maths tomorrow from 9 to 10 am. Mark physics lab done. What is on today. Add course AI Skill Passport.');
+   case 'nav':{go(c.view);const l=(NAV.find(n=>n[0]===c.view)||[])[1]||c.view;return vBanner('Opened '+l)}
+   case 'task':{
+     const t={id:'t'+uid(),title:c.title,subject:'',due:c.date,est:c.est||1,prio:c.prio||2,done:false,sched:0};if(c.time)t.dueTime=c.time;
+     S.tasks.push(t);save();render();setTimeout(autoTick,400);
+     return vSay(`Added task: ${c.title}, due ${vDateSay(c.date)}${c.time?' at '+vT12(c.time):''}.`,()=>{S.tasks=S.tasks.filter(x=>x.id!==t.id);save();render();vBanner('Removed')});
+   }
+   case 'event':{
+     const clash=overlapsOf(c.date,c.start,c.end);
+     const e={id:'e'+uid(),title:c.title,type:c.type,date:c.date,start:c.start,end:c.end,by:'user'};S.events.push(e);save();render();setTimeout(autoTick,400);
+     return vSay(`Added ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}.${clash.length?' Heads up, it overlaps '+clash[0]+'.':''}`,()=>{S.events=S.events.filter(x=>x.id!==e.id);save();render();vBanner('Removed')});
+   }
+   case 'course':{
+     const k={id:'c'+uid(),name:c.name,platform:'',weekly:c.weekly||2,total:0,done:0,end:c.end||'',link:'',note:''};CRS().push(k);save();render();
+     return vSay(`Added course ${c.name}, ${hrs(k.weekly)} a week. Open My courses to add details.`,()=>{S.courses=CRS().filter(x=>x.id!==k.id);save();render();vBanner('Removed')});
+   }
+   case 'lesson':{
+     const L=CRS().filter(x=>!crsDone(x));if(!L.length)return vSay('You have no active courses yet.');
+     const r=c.q?vMatch(c.q,L,x=>x.name):(L.length===1?{one:L[0]}:{many:L.slice(0,3)});
+     if(r.one){const k=r.one;k.done=(k.done||0)+1;if(k.total>0&&k.done>=k.total)k.status='done';save();render();return vSay(`Logged a lesson for ${k.name}. ${k.done}${k.total?' of '+k.total:''} done.`,()=>{k.done=Math.max(0,k.done-1);if(crsDone(k)&&!(k.total>0&&k.done>=k.total))delete k.status;save();render();vBanner('Undone')})}
+     return vSay(r.many?`Which course? ${r.many.map(x=>x.name).join(', or ')}.`:'I could not find that course.');
+   }
+   case 'done':{
+     const L=S.tasks.filter(t=>!t.done),r=vMatch(c.q,L,t=>t.title);
+     if(r.one){const t=r.one,rec=!!t.rec;A.taskToggle({dataset:{arg:t.id}});return vSay(`Marked ${t.title} done.`,rec?null:()=>{A.taskToggle({dataset:{arg:t.id}});vBanner('Undone')})}
+     return vSay(r.many?`Which one? ${r.many.map(x=>x.title).join(', or ')}.`:`I could not find a task like ${c.q}.`);
+   }
+   case 'summary':return vSay(vDaySummary(c.date));
+   case 'next':{const t0=today(),n=nowM(),e=occ(t0).filter(x=>x.type!=='rest'&&mins(x.start)>n).sort((a,b)=>mins(a.start)-mins(b.start))[0];return vSay(e?`Next is ${e.title} at ${vT12(e.start)}.`:'Nothing else on your calendar today.')}
+   case 'ask':{vBanner('Asking Aura...');try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
+  }
+}
+function vRun(raw){try{vExec(vParse(raw))}catch(e){vBanner('Sorry, that did not work. Try again.')}}
+/* ---- listening ---- */
+let VOREC=null,VOWAKE=null,VOARM=0;
+function vWakeStop(){const r=VOWAKE;VOWAKE=null;if(r){try{r.onend=null;r.onresult=null;r.onerror=null;r.abort()}catch(e){}}}
+function vWakeResume(){if(VC().wake&&!document.hidden&&!VOREC)setTimeout(vWakeStart,500)}
+function vWakeHeard(tx){
+  const m=/\b(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora|arora|laura|aara|ara|eura|aurra)\b[\s,.:]*(.*)$/i.exec(tx);
+  if(m){const cmd=m[1].trim();if(cmd.length>2){vRun(cmd);return}VOARM=Date.now()+8000;vBanner('Yes? Say a command.','',true);return}
+  if(Date.now()<VOARM){VOARM=0;vRun(tx)}
+}
+function vWakeStart(){
+  if(!SR||!VC().wake||document.hidden||VOREC||VOWAKE)return;
+  try{
+    const r=new SR();VOWAKE=r;r.lang='en-IN';r.continuous=true;r.interimResults=false;
+    r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)vWakeHeard(e.results[i][0].transcript.trim())};
+    r.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){VC().wake=false;rawSave();VOWAKE=null;toast('The microphone is blocked, so Hey Aura is off. Allow it in your browser settings.');if(UI.view==='profile')render()}};
+    r.onend=()=>{VOWAKE=null;if(VC().wake&&!document.hidden&&!VOREC)setTimeout(vWakeStart,700)};
+    r.start();
+  }catch(e){VOWAKE=null}
+}
+function voiceTap(){
+  if(VOREC){try{VOREC.stop()}catch(e){}return}
+  if(!SR){toast('Voice input is not supported in this browser. Use Chrome on Android.');return}
+  vWakeStop();let fin='',err='';
+  try{
+    const r=new SR();VOREC=r;r.lang='en-IN';r.interimResults=true;r.continuous=false;
+    r.onstart=()=>{vBanner('Listening...','',true);const f=$('#vfab');if(f)f.classList.add('on')};
+    r.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)fin+=x[0].transcript+' ';else it+=x[0].transcript}vBanner(fin||it||'Listening...','',true)};
+    r.onerror=e=>{err=e.error||'error'};
+    r.onend=()=>{VOREC=null;const f=$('#vfab');if(f)f.classList.remove('on');
+      if(fin.trim())vRun(fin.trim());
+      else if(err==='not-allowed'||err==='service-not-allowed')vBanner('The microphone is blocked. Allow it for this site in your browser settings.');
+      else if(err==='network')vBanner('Voice needs an internet connection.');
+      else vBanner('I did not catch that. Tap the mic and try again.');
+      vWakeResume()};
+    r.start();
+  }catch(e){VOREC=null;toast('Voice input is not available here.');vWakeResume()}
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)vWakeStop();else vWakeResume()});
+setTimeout(()=>{if(VC().wake)vWakeStart()},2500);
+Object.assign(A,{
+ voice:voiceTap,
+ voiceUndo:()=>{const u=VU;if(u){VU=null;try{u()}catch(e){}}},
+ voiceClose:()=>{const b=$('#vbanner');if(b)b.classList.remove('on')},
+ voiceSpeak:()=>{const v=VC();v.speak=!v.speak;save();render()},
+ voiceWake:()=>{const v=VC();if(!SR){toast('This browser does not support voice input. Use Chrome on Android.');return}v.wake=!v.wake;save();if(v.wake){vWakeStart();toast('Hey Aura is on while the app is open')}else{vWakeStop();toast('Hey Aura is off')}render()}
+});
+function voiceCard(){
+  const v=VC();
+  return `<section class="card" aria-labelledby="vc-h"><header><h2 id="vc-h">Voice commands</h2><span class="pill ${v.wake?'ok':''}">${v.wake?'Hey Aura on':'Tap to talk'}</span></header>
+   <p class="sm muted">Tap the mic button on any screen and speak. Say things like "open tasks", "add task physics lab tomorrow at 5 pm" or "what is on today". Anything it does not recognise goes to the Aura assistant.</p>
+   <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Say "Hey Aura"</div><div class="sm muted">Listens while AuraStudent is open on screen. Experimental: it uses battery, keeps the microphone on, and stops when the screen is off or the app is closed.</div></div><button class="switch" role="switch" aria-checked="${v.wake}" aria-label="Say Hey Aura" data-act="voiceWake"></button></div>
+   <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Speak replies aloud</div></div><button class="switch" role="switch" aria-checked="${v.speak}" aria-label="Speak replies aloud" data-act="voiceSpeak"></button></div>
+   <details style="margin-top:8px"><summary class="sm" style="cursor:pointer;font-weight:650">What you can say</summary><div class="sm" style="line-height:1.6;margin-top:6px">
+    <p><b>Open a screen:</b> "open tasks", "go to calendar", "show courses", "open hackathons".</p>
+    <p><b>Add a task or reminder:</b> "add task submit lab report tomorrow at 9 am", "remind me to call the bank on Friday at 5 pm", "add task read chapter 3 for 2 hours".</p>
+    <p><b>Add to the calendar:</b> "schedule class maths tomorrow from 9 to 10 am", "add exam physics on 28 October at 10 am".</p>
+    <p><b>Finish things:</b> "mark lab report done", "log a lesson for AI Skill Passport".</p>
+    <p><b>Courses:</b> "add course data structures 3 hours a week".</p>
+    <p><b>Ask:</b> "what is on today", "what is on tomorrow", "what is next".</p>
+    <p class="faint">Every addition shows an Undo button for a few seconds.</p></div></details></section>`;
+}
+{const _vp11=VIEWS.profile;VIEWS.profile=()=>_vp11()+voiceCard()}
+{const st=document.createElement('style');st.textContent=`
+.vfab{position:fixed;right:max(18px,env(safe-area-inset-right,0px));bottom:calc(158px + env(safe-area-inset-bottom,0px));width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:grid;place-items:center;padding:0;box-shadow:0 8px 22px -8px rgba(0,0,0,.45);z-index:45;cursor:pointer}
+.vfab:hover{border-color:var(--accent)}.vfab.on{background:var(--accent);color:var(--on-accent,#fff);border-color:var(--accent);animation:vp 1.2s ease-in-out infinite}
+@keyframes vp{50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 30%,transparent)}}
+@media (max-width:860px){.vfab{bottom:calc(220px + env(safe-area-inset-bottom,0px))}}
+#vbanner{position:fixed;left:50%;width:max-content;top:calc(12px + env(safe-area-inset-top,0px));transform:translate(-50%,-20px);background:var(--ink);color:var(--bg);padding:10px 12px 10px 16px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:all .25s;z-index:70;max-width:calc(100vw - 24px);display:flex;align-items:center;gap:10px}
+#vbanner.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#vbanner .vtx{min-width:0;overflow-wrap:anywhere}#vbanner .vdot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}#vbanner .vdot.live{animation:vp 1.2s ease-in-out infinite}
+#vbanner .vbt{background:transparent;border:1px solid color-mix(in srgb,var(--bg) 40%,transparent);color:var(--bg);border-radius:8px;padding:4px 10px;font:inherit;font-weight:700;cursor:pointer;min-height:32px;flex:none}`;document.head.appendChild(st);
+const vf=document.createElement('button');vf.className='vfab';vf.id='vfab';vf.setAttribute('data-act','voice');vf.setAttribute('aria-label','Talk to Aura');vf.innerHTML=ico('mic',20);document.body.appendChild(vf)}
+/* the mic inside the Aura panel now uses the same voice commands */
+A.mic=()=>voiceTap();
 
 try{const t=localStorage.getItem(TKEY);if(t)document.documentElement.dataset.theme=t;const v=localStorage.getItem('aurastudent.view');if(v&&VIEWS[v])UI.view=v}catch(e){}
 render();
