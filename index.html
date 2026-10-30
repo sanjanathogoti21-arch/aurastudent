@@ -395,6 +395,7 @@ function ensureNew(s){
   if(s.profile&&typeof s.profile==='object'&&s.profile.term===undefined)s.profile.term='';
   s.courses=Array.isArray(s.courses)?s.courses:[];
   s.voice=Object.assign({wake:false,speak:true},s.voice||{});
+  s.sync=Object.assign({on:false,url:'',token:'',code:'',key:'',rev:0,meta:{},last:0,err:'',synced:false},s.sync||{});
   s.push=Object.assign({on:false,url:'',token:'',id:'',details:true,last:0,err:'',count:0},s.push||{});
   s.items=Array.isArray(s.items)?s.items:[];s.hacks=Array.isArray(s.hacks)?s.hacks:[];s.comms=Array.isArray(s.comms)?s.comms:[];
   s.templates=Array.isArray(s.templates)?s.templates:DEFTPL();
@@ -2774,6 +2775,137 @@ function voiceCard(){
 const vf=document.createElement('button');vf.className='vfab';vf.id='vfab';vf.setAttribute('data-act','voice');vf.setAttribute('aria-label','Talk to Aura');vf.innerHTML=ico('mic',20);document.body.appendChild(vf)}
 /* the mic inside the Aura panel now uses the same voice commands */
 A.mic=()=>voiceTap();
+
+/* ================= Sync between devices (through your own server) ================= */
+const SY=()=>{const d={on:false,url:'',token:'',code:'',key:'',rev:0,meta:{},last:0,err:'',synced:false};if(!S.sync||typeof S.sync!=='object')S.sync={};for(const k in d)if(S.sync[k]===undefined)S.sync[k]=d[k];return S.sync};
+const SYNC_COLS=['events','tasks','habits','items','hacks','comms','templates','courses'];
+const SYNC_OBJS=['profile','notif'];
+const SY_SIG={events:r=>[r.title,r.date,r.start,r.end,r.rec||''].join('|'),tasks:r=>[r.title,r.due||''].join('|'),habits:r=>r.name,items:r=>[r.title,r.date||'',r.time||''].join('|'),hacks:r=>r.title,comms:r=>r.name,templates:r=>[r.name,r.title,r.start].join('|'),courses:r=>r.name};
+const sySig=(c,r)=>String(SY_SIG[c](r)||'').trim().toLowerCase();
+const syStable=v=>v===null||typeof v!=='object'?JSON.stringify(v===undefined?null:v):Array.isArray(v)?'['+v.map(syStable).join(',')+']':'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+syStable(v[k])).join(',')+'}';
+const syH=v=>hash36(syStable(v));
+const syClone=v=>JSON.parse(JSON.stringify(v));
+const syUrlOK=u=>pushUrlOK(u)||/^http:\/\/localhost(:\d+)?(\/\S*)?$/.test(u||'');
+const syNorm=c=>String(c||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+async function syKey(code){const d=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('aurastudent-sync|'+syNorm(code))));return [...d].map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,40)}
+function syNewCode(){const al='abcdefghjkmnpqrstuvwxyz23456789',a=crypto.getRandomValues(new Uint8Array(20));let s='';for(let i=0;i<20;i++){s+=al[a[i]%al.length];if(i%4===3&&i<19)s+='-'}return s}
+async function syApi(path,body){
+  const Y=SY();let r;
+  try{r=await fetch(Y.url.replace(/\/+$/,'')+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+Y.token},body:JSON.stringify(body)})}
+  catch(e){throw new Error('Could not reach your server. Check the address and your connection.')}
+  let j={};try{j=await r.json()}catch(e){}
+  if(r.status===409)return Object.assign({conflict:true},j);
+  if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
+  return j;
+}
+/* what this device has now, with a change time for each record */
+function syLocal(now){
+  const Y=SY(),meta=Y.meta,out={},tc=(Y.dirty>0&&Y.dirty<=now)?Y.dirty:now;
+  const add=(k,v)=>{const h=syH(v),m=meta[k];out[k]=(m&&!m.d&&m.h===h)?{t:m.t,v,ch:false}:{t:tc,v,ch:true}};
+  for(const c of SYNC_COLS)for(const r of (S[c]||[]))if(r&&typeof r.id==='string')add(c+'|'+r.id,r);
+  for(const o of SYNC_OBJS)for(const f of Object.keys(S[o]||{}))add(o+'|'+f,S[o][f]);
+  for(const k in meta)if(!meta[k].d&&!out[k]&&SYNC_COLS.includes(k.split('|')[0]))out[k]={t:tc,d:true,ch:true};
+  return out;
+}
+function syMerge(L,R,first){
+  const meta=SY().meta,M={};
+  for(const k of new Set([...Object.keys(L),...Object.keys(R)])){
+    const l=L[k],r=R[k];
+    if(l&&!r){M[k]=l;continue}
+    if(!l&&r){M[k]=r;continue}
+    const isObj=SYNC_OBJS.includes(k.split('|')[0]);
+    if(!l.d&&!r.d&&syH(l.v)===syH(r.v)){M[k]={t:Math.max(l.t,r.t),v:l.v};continue}
+    if(first&&isObj){M[k]=r;continue}
+    const w=first?r:((r.t>=l.t)?r:l);
+    if(k.startsWith('habits|')&&!l.d&&!r.d&&l.ch&&(!meta[k]||r.t>meta[k].t)){const v=syClone(w.v);v.log=Object.assign({},(w===r?l.v:r.v).log||{},w.v.log||{});M[k]={t:Math.max(l.t,r.t),v};continue}
+    M[k]=w;
+  }
+  return M;
+}
+function syApply(M){
+  let changed=false;
+  for(const c of SYNC_COLS){
+    const arr=Array.isArray(S[c])?S[c]:[],next=[],seen=new Set();
+    for(const x of arr){const k=c+'|'+x.id;seen.add(k);const m=M[k];
+      if(!m){next.push(x);continue}
+      if(m.d){changed=true;continue}
+      if(m.v&&syH(m.v)!==syH(x)){next.push(syClone(m.v));changed=true}else next.push(x)}
+    for(const k in M){if(!k.startsWith(c+'|')||seen.has(k))continue;const m=M[k];if(!m.d&&m.v){next.push(syClone(m.v));changed=true}}
+    S[c]=next;
+  }
+  for(const o of SYNC_OBJS){S[o]=S[o]||{};for(const k in M){if(!k.startsWith(o+'|'))continue;const f=k.slice(o.length+1),m=M[k];if(!m.d&&m.v!==undefined&&syH(m.v)!==syH(S[o][f])){S[o][f]=syClone(m.v);changed=true}}}
+  return changed;
+}
+let syBusy=false,syAgain=false,syT;
+async function syncNow(manual){
+  const Y=SY();if(!Y.on)return;
+  if(syBusy){syAgain=true;return}
+  if(!navigator.onLine){if(manual)toast('You are offline. Sync will run when you are back online.');return}
+  syBusy=true;let changedAny=false,fin=false;
+  try{
+    for(let i=0;i<4&&!fin;i++){
+      const pull=await syApi('/sync/pull',{key:Y.key}),now=Date.now(),R=pull.recs||{},first=!Y.synced;
+      if(first){ /* first connection: drop local copies of things the other device already has */
+        const have={};for(const k in R){const r=R[k];if(!r.d&&r.v){const c=k.split('|')[0];if(SYNC_COLS.includes(c))(have[c]=have[c]||new Set()).add(sySig(c,r.v))}}
+        for(const c of SYNC_COLS){if(!have[c]||!Array.isArray(S[c]))continue;S[c]=S[c].filter(x=>{if(!x||typeof x.id!=='string')return true;const k=c+'|'+x.id;return R[k]||!have[c].has(sySig(c,x))})}
+      }
+      const L=syLocal(now),M=syMerge(L,R,first);
+      if(syApply(M))changedAny=true;
+      const recs={};for(const k in M){const m=M[k];recs[k]=m.d?{t:m.t,d:true}:{t:m.t,v:m.v}}
+      const meta={};for(const k in M){const m=M[k];if(m.d&&now-m.t>45*86400e3)continue;meta[k]={h:m.d?null:syH(m.v),t:m.t,d:!!m.d}}
+      Y.meta=meta;
+      if(syStable(recs)===syStable(R)){Y.rev=pull.rev;fin=true;break}
+      const res=await syApi('/sync/push',{key:Y.key,rev:pull.rev,recs});
+      if(res.conflict)continue;
+      Y.rev=res.rev;fin=true;
+    }
+    if(!fin)throw new Error('Another device was syncing at the same time. Try again in a moment.');
+    Y.last=Date.now();Y.err='';Y.synced=true;Y.dirty=0;
+  }catch(e){Y.err=(e&&e.message)||'Sync failed.'}
+  syBusy=false;rawSave();
+  if(changedAny){try{if(S.ntfy&&S.ntfy.on)ntfyLater();if(PU().on)pushLater()}catch(e){}}
+  if(manual)toast(Y.err?'Sync failed: '+Y.err:changedAny?'Synced. Changes from your other device are here.':'Synced. Everything is up to date.');
+  if(changedAny||manual||Y.err){if(!$('#modal').innerHTML&&!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('form')&&UI.view!=='profile'))render()}
+  if(syAgain){syAgain=false;syLater()}
+}
+const syLater=()=>{clearTimeout(syT);syT=setTimeout(()=>syncNow(false),4000)};
+{const _sv2=save;save=function(){_sv2();if(SY().on){SY().dirty=Date.now();syLater()}}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&SY().on&&Date.now()-SY().last>60000)syncNow(false)});
+setInterval(()=>{if(!document.hidden&&SY().on&&Date.now()-SY().last>120000)syncNow(false)},30000);
+setTimeout(()=>{if(SY().on)syncNow(false)},3500);
+function syncCard(){
+  const Y=SY(),P=PU(),on=Y.on;
+  return `<section class="card" aria-labelledby="sy-h"><header><h2 id="sy-h">Sync your phone and laptop</h2><span class="pill ${on?'ok':''}">${on?'On':'Off'}</span></header>
+   <p class="sm muted">Enter things once and they appear on every device. Changes merge automatically, including when one device was offline. It uses the same server as push alerts (<a href="push-setup.html" target="_blank" rel="noopener">setup guide</a>), so your data stays in your own account.</p>
+   ${on?`<div class="sm" style="margin-top:10px">${Y.err?`<span style="color:var(--bad)">${esc(Y.err)}</span>`:`Last synced ${Y.last?ago(Y.last):'not yet'}.`}</div>
+    <div class="f" style="margin-top:10px"><span class="sm muted">Your sync code. Enter it on your other device. Keep it private.</span><div class="row" style="margin-top:4px;flex-wrap:wrap;gap:8px"><code id="sy-code" style="font-size:15px;padding:8px 10px;background:var(--surface-2);border-radius:8px;overflow-wrap:anywhere">${esc(Y.code)}</code><button class="btn sm" data-act="syCopy">Copy code</button></div></div>
+    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="syNow">Sync now</button><button class="btn ghost" data-act="syOff">Turn off</button><button class="btn ghost" data-act="syDel">Turn off and delete server copy</button></div>`
+   :`<div class="fgrid" style="margin-top:10px"><label class="f" style="grid-column:1/-1">Server address<input class="in" id="sy-url" value="${esc(Y.url||P.url)}" placeholder="https://aurastudent-push.yourname.workers.dev" autocomplete="off" spellcheck="false"></label>
+    <label class="f" style="grid-column:1/-1">Access token<input class="in" id="sy-tok" type="password" value="${esc(Y.token||P.token)}" autocomplete="off" spellcheck="false"></label>
+    <label class="f" style="grid-column:1/-1">Sync code<input class="in" id="sy-code-in" value="${esc(Y.code)}" placeholder="Leave empty on your first device" autocomplete="off" spellcheck="false"></label></div>
+    <p class="sm faint" style="margin-top:6px">First device: leave the code empty and a new one is made. Second device: enter the same server address, token and the code from the first device.</p>
+    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="syOn">Turn on sync</button></div>${Y.err?`<p class="sm" style="color:var(--bad);margin-top:8px">${esc(Y.err)}</p>`:''}`}
+   <p class="sm faint" style="margin-top:10px">If you delete something on one device it is deleted on the others. Restoring a backup counts as changes too. If two devices change the same item, the newer change wins.</p></section>`;
+}
+{const _vp12=VIEWS.profile;VIEWS.profile=()=>_vp12()+syncCard()}
+Object.assign(A,{
+ syOn:async()=>{
+   const Y=SY(),url=($('#sy-url')||{}).value.trim().replace(/\/+$/,''),tok=($('#sy-tok')||{}).value.trim();let code=($('#sy-code-in')||{}).value.trim();
+   if(!syUrlOK(url)){toast('Enter the server address, starting with https://');return}
+   if(!tok){toast('Enter the access token');return}
+   if(code&&syNorm(code).length<16){toast('That sync code looks too short. Copy it again from your other device.');return}
+   if(!code)code=syNewCode();
+   Y.url=url;Y.token=tok;Y.code=code;Y.key=await syKey(code);Y.rev=0;Y.meta={};Y.synced=false;Y.err='';Y.on=true;
+   await syncNow(true);
+   if(Y.err){Y.on=false;rawSave();render()}else render();
+ },
+ syNow:()=>syncNow(true),
+ syCopy:async()=>{const c=SY().code;try{await navigator.clipboard.writeText(c);toast('Code copied')}catch(e){const el=$('#sy-code');if(el){const r=document.createRange();r.selectNodeContents(el);const s=getSelection();s.removeAllRanges();s.addRange(r)}toast('Select and copy the code')}},
+ syOff:()=>{const Y=SY();Y.on=false;Y.synced=false;Y.meta={};rawSave();render();toast('Sync is off. Your data stays on this device.')},
+ syDel:async()=>{const Y=SY();if(!confirm('Delete the copy of your data stored on your server and turn sync off? Data on your devices stays.'))return;try{await syApi('/sync/delete',{key:Y.key})}catch(e){toast('Could not delete the server copy: '+e.message);return}Y.on=false;Y.synced=false;Y.meta={};rawSave();render();toast('Server copy deleted. Sync is off.')}
+});
+{const _ai3=applyImport;applyImport=function(d,mode){const ks=S.sync;const n=_ai3(d,mode);if(ks)S.sync=ks;return n}}
+{const _eo2=exportObj;exportObj=function(){const o=_eo2();if(o&&o.data)delete o.data.sync;return o}}
 
 try{const t=localStorage.getItem(TKEY);if(t)document.documentElement.dataset.theme=t;const v=localStorage.getItem('aurastudent.view');if(v&&VIEWS[v])UI.view=v}catch(e){}
 render();

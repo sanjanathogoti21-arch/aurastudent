@@ -66,6 +66,7 @@ async function ensure(env) {
     env.DB.prepare('CREATE TABLE IF NOT EXISTS subs (id TEXT PRIMARY KEY, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created INTEGER)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS alerts (sid TEXT NOT NULL, seq TEXT NOT NULL, at INTEGER NOT NULL, title TEXT, msg TEXT, PRIMARY KEY (sid, seq))'),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS alerts_at ON alerts (at)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS docs (k TEXT PRIMARY KEY, rev INTEGER NOT NULL, body TEXT NOT NULL, updated INTEGER)'),
   ]);
   ready = true;
 }
@@ -84,7 +85,7 @@ async function handle(request, env) {
   if (request.method !== 'POST') return json(env, { error: 'Not found' }, 404);
   if (request.headers.get('Authorization') !== 'Bearer ' + env.TOKEN) return json(env, { error: 'Wrong access token.' }, 401);
   const raw = await request.text();
-  if (raw.length > 200000) return json(env, { error: 'Too large.' }, 413);
+  if (raw.length > (url.pathname.startsWith('/sync/') ? 1500000 : 200000)) return json(env, { error: 'Too large.' }, 413);
   let b; try { b = JSON.parse(raw); } catch { return json(env, { error: 'Bad JSON.' }, 400); }
   await ensure(env);
 
@@ -94,6 +95,28 @@ async function handle(request, env) {
     const id = await sha(s.endpoint);
     await env.DB.prepare('INSERT INTO subs (id, endpoint, p256dh, auth, created) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET p256dh = ?3, auth = ?4').bind(id, s.endpoint, k.p256dh, k.auth, Date.now()).run();
     return json(env, { id });
+  }
+  if (url.pathname.startsWith('/sync/')) {
+    const key = str(b && b.key, 80);
+    if (!/^[a-f0-9]{32,64}$/.test(key)) return json(env, { error: 'Bad sync key.' }, 400);
+    const row = await env.DB.prepare('SELECT rev, body FROM docs WHERE k = ?1').bind(key).first();
+    const rev = row ? row.rev : 0;
+    const cur = () => (row ? JSON.parse(row.body) : {});
+    if (url.pathname === '/sync/pull') return json(env, { rev, recs: cur() });
+    if (url.pathname === '/sync/delete') { await env.DB.prepare('DELETE FROM docs WHERE k = ?1').bind(key).run(); return json(env, { ok: true }); }
+    if (url.pathname !== '/sync/push') return json(env, { error: 'Not found' }, 404);
+    const recs = b.recs;
+    if (!recs || typeof recs !== 'object' || Array.isArray(recs)) return json(env, { error: 'Bad data.' }, 400);
+    if (Number(b.rev) !== rev) return json(env, { error: 'conflict', rev, recs: cur() }, 409);
+    const cutoff = Date.now() - 45 * 86400e3;
+    for (const k of Object.keys(recs)) { const x = recs[k]; if (!x || typeof x !== 'object' || (x.d && x.t < cutoff)) delete recs[k]; }
+    const body = JSON.stringify(recs);
+    if (body.length > 1500000) return json(env, { error: 'Your data is too large to sync.' }, 413);
+    const res = row
+      ? await env.DB.prepare('UPDATE docs SET rev = ?2, body = ?3, updated = ?4 WHERE k = ?1 AND rev = ?5').bind(key, rev + 1, body, Date.now(), rev).run()
+      : await env.DB.prepare('INSERT OR IGNORE INTO docs (k, rev, body, updated) VALUES (?1, 1, ?2, ?3)').bind(key, body, Date.now()).run();
+    if (!res || !res.meta || res.meta.changes !== 1) { const again = await env.DB.prepare('SELECT rev, body FROM docs WHERE k = ?1').bind(key).first(); return json(env, { error: 'conflict', rev: again ? again.rev : 0, recs: again ? JSON.parse(again.body) : {} }, 409); }
+    return json(env, { ok: true, rev: rev + 1 });
   }
   const id = str(b && b.id, 64);
   const sub = id && await env.DB.prepare('SELECT * FROM subs WHERE id = ?1').bind(id).first();

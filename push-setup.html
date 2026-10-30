@@ -86,6 +86,7 @@ async function ensure(env) {
     env.DB.prepare('CREATE TABLE IF NOT EXISTS subs (id TEXT PRIMARY KEY, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created INTEGER)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS alerts (sid TEXT NOT NULL, seq TEXT NOT NULL, at INTEGER NOT NULL, title TEXT, msg TEXT, PRIMARY KEY (sid, seq))'),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS alerts_at ON alerts (at)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS docs (k TEXT PRIMARY KEY, rev INTEGER NOT NULL, body TEXT NOT NULL, updated INTEGER)'),
   ]);
   ready = true;
 }
@@ -104,7 +105,7 @@ async function handle(request, env) {
   if (request.method !== 'POST') return json(env, { error: 'Not found' }, 404);
   if (request.headers.get('Authorization') !== 'Bearer ' + env.TOKEN) return json(env, { error: 'Wrong access token.' }, 401);
   const raw = await request.text();
-  if (raw.length &gt; 200000) return json(env, { error: 'Too large.' }, 413);
+  if (raw.length &gt; (url.pathname.startsWith('/sync/') ? 1500000 : 200000)) return json(env, { error: 'Too large.' }, 413);
   let b; try { b = JSON.parse(raw); } catch { return json(env, { error: 'Bad JSON.' }, 400); }
   await ensure(env);
 
@@ -114,6 +115,28 @@ async function handle(request, env) {
     const id = await sha(s.endpoint);
     await env.DB.prepare('INSERT INTO subs (id, endpoint, p256dh, auth, created) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET p256dh = ?3, auth = ?4').bind(id, s.endpoint, k.p256dh, k.auth, Date.now()).run();
     return json(env, { id });
+  }
+  if (url.pathname.startsWith('/sync/')) {
+    const key = str(b &amp;&amp; b.key, 80);
+    if (!/^[a-f0-9]{32,64}$/.test(key)) return json(env, { error: 'Bad sync key.' }, 400);
+    const row = await env.DB.prepare('SELECT rev, body FROM docs WHERE k = ?1').bind(key).first();
+    const rev = row ? row.rev : 0;
+    const cur = () =&gt; (row ? JSON.parse(row.body) : {});
+    if (url.pathname === '/sync/pull') return json(env, { rev, recs: cur() });
+    if (url.pathname === '/sync/delete') { await env.DB.prepare('DELETE FROM docs WHERE k = ?1').bind(key).run(); return json(env, { ok: true }); }
+    if (url.pathname !== '/sync/push') return json(env, { error: 'Not found' }, 404);
+    const recs = b.recs;
+    if (!recs || typeof recs !== 'object' || Array.isArray(recs)) return json(env, { error: 'Bad data.' }, 400);
+    if (Number(b.rev) !== rev) return json(env, { error: 'conflict', rev, recs: cur() }, 409);
+    const cutoff = Date.now() - 45 * 86400e3;
+    for (const k of Object.keys(recs)) { const x = recs[k]; if (!x || typeof x !== 'object' || (x.d &amp;&amp; x.t &lt; cutoff)) delete recs[k]; }
+    const body = JSON.stringify(recs);
+    if (body.length &gt; 1500000) return json(env, { error: 'Your data is too large to sync.' }, 413);
+    const res = row
+      ? await env.DB.prepare('UPDATE docs SET rev = ?2, body = ?3, updated = ?4 WHERE k = ?1 AND rev = ?5').bind(key, rev + 1, body, Date.now(), rev).run()
+      : await env.DB.prepare('INSERT OR IGNORE INTO docs (k, rev, body, updated) VALUES (?1, 1, ?2, ?3)').bind(key, body, Date.now()).run();
+    if (!res || !res.meta || res.meta.changes !== 1) { const again = await env.DB.prepare('SELECT rev, body FROM docs WHERE k = ?1').bind(key).first(); return json(env, { error: 'conflict', rev: again ? again.rev : 0, recs: again ? JSON.parse(again.body) : {} }, 409); }
+    return json(env, { ok: true, rev: rev + 1 });
   }
   const id = str(b &amp;&amp; b.id, 64);
   const sub = id &amp;&amp; await env.DB.prepare('SELECT * FROM subs WHERE id = ?1').bind(id).first();
@@ -182,6 +205,10 @@ export default {
 <li>Paste the address and the TOKEN. Tap <b>Turn on push alerts</b> and allow notifications.</li>
 <li>Tap <b>Send a test</b>. A notification should arrive within seconds. Do this on every device you want alerts on.</li>
 <li>Lock the phone and set a task for a few minutes ahead to try a real alert.</li></ol>
+<h2>Updating the server later</h2>
+<p>When AuraStudent adds a server feature (for example syncing between devices), copy the server code again from the box above, then open your worker, click <b>Edit code</b>, press Ctrl+A, paste, and click <b>Deploy</b>. Your keys, database and timer stay as they are.</p>
+<h2>Sync between phone and laptop</h2>
+<p>After the server works, open AuraStudent, then Profile, then <b>Sync your phone and laptop</b>. On the first device leave the code empty and tap Turn on sync. On the second device enter the same server address, token and the code shown on the first.</p>
 <h2>If something fails</h2>
 <ul><li><b>"Wrong access token"</b>: the TOKEN in AuraStudent must match the one in Cloudflare exactly.</li><li><b>"Could not reach your push server"</b>: check the address starts with https:// and opens in a browser.</li><li><b>No alert on iPhone</b>: it only works for the app added to the Home Screen, on iOS 16.4 or newer.</li><li><b>Alerts late or missing</b>: turn off battery saver for your browser or the installed app, and allow notifications for it.</li></ul>
 <p class="m">Free limits are far above what one person uses. Delivery is not guaranteed: it depends on your phone and network.</p>
