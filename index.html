@@ -996,7 +996,7 @@ function showRems(){$('#rems').innerHTML=REM.map((r,i)=>`<div class="rem" role="
 function fireRem(key,title,body){
   if(S.fired[key])return;S.fired[key]=Date.now();save();
   REM.push({title,body});showRems();beep();
-  try{if(!(S.push&&S.push.on)&&'Notification' in window&&Notification.permission==='granted'){if(navigator.serviceWorker&&navigator.serviceWorker.ready)navigator.serviceWorker.ready.then(g=>g.showNotification(title,{body,icon:'icon-192.png',badge:'icon-192.png',tag:key})).catch(()=>{});else new Notification(title,{body})}}catch(e){}
+  try{if(!(S.push&&S.push.on)&&'Notification' in window&&Notification.permission==='granted'){if(navigator.serviceWorker&&navigator.serviceWorker.ready)navigator.serviceWorker.ready.then(g=>g.showNotification(/^AuraStudent/i.test(title)?title:'AuraStudent \u00b7 '+title,{body,icon:'icon-192.png',badge:'badge-96.png',tag:key,renotify:true,requireInteraction:true,silent:false,vibrate:[250,120,250,120,400]})).catch(()=>{});else new Notification(title,{body})}}catch(e){}
 }
 function checkReminders(){
   const n=nowM(),t0=today(),lead=+S.notif.eventLead||15;
