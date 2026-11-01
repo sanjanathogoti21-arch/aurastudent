@@ -2810,15 +2810,27 @@ function vWakeStart(){
     r.start();
   }catch(e){VOWAKE=null}
 }
-function voiceTap(again){
+let VOPERM=false;
+async function vMicCheck(){
+  if(VOPERM||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return '';
+  try{const st=await navigator.mediaDevices.getUserMedia({audio:true});st.getTracks().forEach(t=>t.stop());VOPERM=true;return ''}
+  catch(e){const n=e&&e.name;return n==='NotAllowedError'||n==='SecurityError'?'blocked':n==='NotFoundError'||n==='OverconstrainedError'?'nomic':n==='NotReadableError'?'busy':''}
+}
+async function voiceTap(again){
   if(VOREC){try{VOREC.stop()}catch(e){}return}
   if(!SR){toast('Voice input is not supported in this browser. Use Chrome on Android.');return}
   if(VOWAKE&&!again){vWakeStop();vBanner('Starting the microphone...','',true);setTimeout(()=>voiceTap(true),450);return}
-  vWakeStop();let fin='',err='',alts=[],nf=0,lastI='',got=false;
+  vWakeStop();let fin='',err='',alts=[],nf=0,lastI='',got=false,started=false,heard=false;
+  vBanner('Starting the microphone...','',true);
+  const mc=await vMicCheck();
+  if(VOREC)return;
+  if(mc==='blocked'){vBanner('The microphone is blocked for this app. Click the lock or microphone icon in the address bar or app menu and allow it, then try again.');vWakeResume();return}
+  if(mc==='nomic'){vBanner('No microphone was found. Plug one in or check Windows sound settings.');vWakeResume();return}
+  if(mc==='busy'){vBanner('The microphone is being used by another app. Close it and try again.');vWakeResume();return}
   try{
     const r=new SR();VOREC=r;r.lang='en-IN';r.interimResults=true;r.continuous=false;vHints(r);
-    r.onstart=()=>{vBanner('Listening...','',true);const f=$('#vfab');if(f)f.classList.add('on')};
-    r.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal){fin+=x[0].transcript+' ';nf++;alts=nf>1?[]:vAlts(x)}else it+=x[0].transcript}if(it)lastI=it;got=true;vBanner(fin||it||'Listening...','',true)};
+    r.onstart=()=>{started=true;vBanner('Listening...','',true);const f=$('#vfab');if(f)f.classList.add('on')};
+    r.onspeechstart=()=>{heard=true};r.onresult=e=>{heard=true;let it='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal){fin+=x[0].transcript+' ';nf++;alts=nf>1?[]:vAlts(x)}else it+=x[0].transcript}if(it)lastI=it;got=true;vBanner(fin||it||'Listening...','',true)};
     r.onerror=e=>{err=e.error||'error'};
     r.onend=()=>{VOREC=null;const f=$('#vfab');if(f)f.classList.remove('on');
       if(!fin.trim()&&lastI.trim()&&(!err||err==='no-speech'||err==='aborted')){fin=lastI;alts=[]}
@@ -2829,6 +2841,8 @@ function voiceTap(again){
       else if(err==='language-not-supported')vBanner('Your browser does not support this voice language.');
       else if(err==='no-speech')vBanner('I heard nothing. Tap the mic, wait for Listening, then speak.');
       else if(err==='aborted')vBanner('Listening was interrupted. Tap the mic and try again.');
+      else if(!started)vBanner('This browser could not start voice recognition (no error given). Voice works best in Google Chrome. In Microsoft Edge or an installed window it may be unavailable. You can still type to Aura.');
+      else if(!heard)vBanner('The microphone started but heard no sound. Check the right microphone is selected in Windows sound settings, then speak louder or closer.');
       else vBanner('I did not catch that. Tap the mic and try again.');
       vWakeResume()};
     r.start();
