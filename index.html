@@ -2810,6 +2810,64 @@ function vWakeStart(){
     r.start();
   }catch(e){VOWAKE=null}
 }
+/* ---- cloud speech-to-text (Whisper on the AuraStudent server): works in Edge, Chrome and on phones ---- */
+let VONOCLOUD=false;
+const vCanCloud=()=>!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder&&(window.AudioContext||window.webkitAudioContext)&&!/REPLACE_WITH/.test(PUSH_SERVER));
+async function vToWav(blob){
+  const AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
+  let buf;try{buf=await ac.decodeAudioData(await blob.arrayBuffer())}finally{try{ac.close()}catch(e){}}
+  const n=Math.max(1,Math.ceil(buf.duration*16000)),oc=new OfflineAudioContext(1,n,16000),src=oc.createBufferSource();src.buffer=buf;src.connect(oc.destination);src.start();
+  const pcm=(await oc.startRendering()).getChannelData(0),out=new DataView(new ArrayBuffer(44+pcm.length*2)),w=(o,t)=>{for(let i=0;i<t.length;i++)out.setUint8(o+i,t.charCodeAt(i))};
+  w(0,'RIFF');out.setUint32(4,36+pcm.length*2,true);w(8,'WAVEfmt ');out.setUint32(16,16,true);out.setUint16(20,1,true);out.setUint16(22,1,true);out.setUint32(24,16000,true);out.setUint32(28,32000,true);out.setUint16(32,2,true);out.setUint16(34,16,true);w(36,'data');out.setUint32(40,pcm.length*2,true);
+  for(let i=0;i<pcm.length;i++){const v=Math.max(-1,Math.min(1,pcm[i]));out.setInt16(44+i*2,v<0?v*32768:v*32767,true)}
+  return new Uint8Array(out.buffer);
+}
+/* returns true when it handled the request, false to fall back to the browser's own recogniser */
+async function vCloudTap(){
+  if(!vCanCloud()||VONOCLOUD)return false;
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}})}
+  catch(e){const n=e&&e.name;vBanner(n==='NotAllowedError'||n==='SecurityError'?'The microphone is blocked for this app. Allow it in the address bar or site settings, then try again.':n==='NotReadableError'?'The microphone is being used by another app. Close it and try again.':'No microphone was found. Check your sound settings.');vWakeResume();return true}
+  VOPERM=true;
+  const mt=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'';
+  const rec=new MediaRecorder(stream,mt?{mimeType:mt}:undefined),chunks=[];
+  const AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),an=ac.createAnalyser();an.fftSize=1024;ac.createMediaStreamSource(stream).connect(an);
+  const data=new Float32Array(an.fftSize);let speech=false,lastLoud=Date.now(),t0=Date.now(),floor=0,cal=0,tm,stopped=false;
+  const done=new Promise(res=>{rec.onstop=res});
+  const stop=()=>{if(stopped)return;stopped=true;clearInterval(tm);try{rec.state!=='inactive'&&rec.stop()}catch(e){}};
+  VOREC={stop};const f=$('#vfab');if(f)f.classList.add('on');
+  rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  rec.start(250);vBanner('Listening... speak now','',true);
+  tm=setInterval(()=>{
+    an.getFloatTimeDomainData(data);let sum=0;for(const x of data)sum+=x*x;const rms=Math.sqrt(sum/data.length),now=Date.now();
+    if(now-t0<400){floor=Math.max(floor,rms);cal++;return}
+    const thr=Math.max(.02,floor*2.5);
+    if(rms>thr){speech=true;lastLoud=now}
+    if(speech&&now-lastLoud>1300)stop();
+    else if(!speech&&now-t0>7000)stop();
+    else if(now-t0>14000)stop();
+  },80);
+  await done;
+  stream.getTracks().forEach(t=>t.stop());try{ac.close()}catch(e){}
+  VOREC=null;if(f)f.classList.remove('on');
+  if(!speech||!chunks.length){vBanner('I heard nothing. Check the right microphone is selected, then tap the mic and speak right away.');vWakeResume();return true}
+  vBanner('Understanding...','',true);
+  try{
+    const wav=await vToWav(new Blob(chunks,{type:rec.mimeType||mt}));
+    const r=await fetch(pushBase()+'/stt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audio:u8ToStd(wav)})});
+    let j={};try{j=await r.json()}catch(e){}
+    if(r.status===501||r.status===404){VONOCLOUD=true;vWakeResume();return false}
+    if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
+    const text=String(j.text||'').trim();
+    if(!text||/^[\s.,!?-]*$/.test(text)){vBanner('I did not catch that. Tap the mic and try again.');vWakeResume();return true}
+    vBanner('"'+text+'"','',true);setTimeout(()=>{vRun(text)},350);
+  }catch(e){
+    if(SR){VONOCLOUD=true;vWakeResume();return false}
+    vBanner(/fetch|network|Load failed/i.test(e.message||'')?'Could not reach the AuraStudent server. Check your connection.':(e.message||'Voice failed. Try again.'));
+  }
+  vWakeResume();return true;
+}
+const u8ToStd=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode(...u.subarray(i,i+8192));return btoa(s)};
 let VOPERM=false;
 async function vMicCheck(){
   if(VOPERM||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return '';
@@ -2818,12 +2876,14 @@ async function vMicCheck(){
 }
 async function voiceTap(again){
   if(VOREC){try{VOREC.stop()}catch(e){}return}
-  if(!SR){toast('Voice input is not supported in this browser. Use Chrome on Android.');return}
+  if(!SR&&!vCanCloud()){toast('Voice input is not supported in this browser. Use Chrome on Android.');return}
   if(VOWAKE&&!again){vWakeStop();vBanner('Starting the microphone...','',true);setTimeout(()=>voiceTap(true),450);return}
   vWakeStop();let fin='',err='',alts=[],nf=0,lastI='',got=false,started=false,heard=false;
   vBanner('Starting the microphone...','',true);
   const mc=await vMicCheck();
   if(VOREC)return;
+  if(await vCloudTap())return;
+  if(!SR){vBanner('Voice is not available in this browser right now.');return}
   if(mc==='blocked'){vBanner('The microphone is blocked for this app. Click the lock or microphone icon in the address bar or app menu and allow it, then try again.');vWakeResume();return}
   if(mc==='nomic'){vBanner('No microphone was found. Plug one in or check Windows sound settings.');vWakeResume();return}
   if(mc==='busy'){vBanner('The microphone is being used by another app. Close it and try again.');vWakeResume();return}

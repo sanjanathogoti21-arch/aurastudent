@@ -91,9 +91,19 @@ async function handle(request, env) {
   if (limited(ip, 'all', 240, 60000)) return json(env, { error: 'Too many requests. Wait a minute and try again.' }, 429);
   const isSync = url.pathname.startsWith('/sync/');
   const raw = await request.text();
-  if (raw.length &gt; (isSync ? LIMITS.doc * 1.5 : 400000)) return json(env, { error: 'Too large.' }, 413);
+  if (raw.length &gt; (isSync ? LIMITS.doc * 1.5 : url.pathname === '/stt' ? 900000 : 400000)) return json(env, { error: 'Too large.' }, 413);
   let b; try { b = JSON.parse(raw); } catch { return json(env, { error: 'Bad JSON.' }, 400); }
   if (!b || typeof b !== 'object') return json(env, { error: 'Bad request.' }, 400);
+  if (url.pathname === '/stt') {
+    if (!env.AI) return json(env, { error: 'Speech recognition is not set up on the server yet.' }, 501);
+    if (limited(ip, 'stt', 20, 60000) || limited(ip, 'sttday', 400, 86400e3)) return json(env, { error: 'Too many voice requests. Wait a minute and try again.' }, 429);
+    const a = str(b.audio, 880000);
+    if (a.length &lt; 2000 || !/^[A-Za-z0-9+/=]+$/.test(a)) return json(env, { error: 'No audio received.' }, 400);
+    try {
+      const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: a, language: 'en', initial_prompt: 'Aura. Add task, schedule class, mark done, open tasks, what is on today, smart plan, tomorrow at 5 pm, physics lab, assignment.' });
+      return json(env, { text: String((r &amp;&amp; r.text) || '').trim().slice(0, 500) });
+    } catch (e) { return json(env, { error: 'The speech service failed. Try again.' }, 502); }
+  }
   await ensure(env);
 
   if (isSync) {
@@ -197,6 +207,8 @@ export default {
 <h2>Step 4. Connect the database and the timer</h2>
 <ol><li>Open your worker, then <b>Settings</b>, then <b>Bindings</b>, then <b>Add</b>, then <b>D1 database</b>. Variable name: <code>DB</code> (capital letters). Choose <code>aurastudent-push</code>. Save.</li>
 <li>Settings, then <b>Trigger events</b> (or <b>Triggers</b>), then <b>Cron Triggers</b>, then <b>Add</b>. Enter <code>* * * * *</code> (five stars separated by spaces, meaning every minute). Save.</li></ol>
+<h2>Step 4b. Voice (optional but recommended)</h2>
+<ol><li>Open your worker, then <b>Settings</b>, then <b>Bindings</b>, then <b>Add</b>, then <b>Workers AI</b>. Variable name: <code>AI</code> (capital letters). Save and deploy. Voice commands then work in every browser, using Whisper speech recognition. Audio is sent for transcription only and is not stored. The free plan allows a limited amount of AI use per day.</li></ol>
 <h2>Step 5. Add the keys</h2>
 <ol><li>Settings, then <b>Variables and Secrets</b>, then <b>Add</b>. Add these three, then click <b>Deploy</b>:</li>
 <li><code>VAPID_PUBLIC</code> as Text, with the value from Step 1.</li>
