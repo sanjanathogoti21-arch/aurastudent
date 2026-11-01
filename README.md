@@ -1,2 +1,30 @@
 # AuraStudent
-A personal student planner. Installable web app (PWA). Your planner data stays in your own browser.
+
+A personal student planner I built as a first-year B.Tech student at NIAT. It puts classes, deadlines, hackathons, communities and online courses in one place, and plans study time around them.
+
+**Try it:** https://sanjanathogoti21-arch.github.io/aurastudent/  (opens empty, you fill in your own details)
+
+## What it does
+- Calendar and tasks with clash detection and a smart study plan
+- Hackathon, community and course tracking, with dates marked "confirmed" or "needs verification"
+- Reminders before classes and deadlines, including a due time on tasks
+- Voice commands (tap the mic): "add task physics lab tomorrow at 5 pm", "open courses"
+- Installs on phone and laptop as a PWA and works offline
+- Backup and restore as a JSON file
+
+## Optional extras (advanced)
+- **Push alerts when the app is closed** and **sync between devices** use a small Cloudflare Worker you run in your own free account. Setup guide: `push-setup.html`. Without it the app still works fully on one device, and reminders show while it is open.
+
+## Privacy
+Everything is stored in your own browser. There is no account and no analytics. Nothing leaves your device unless you turn on the optional server features, and then it goes only to your own server.
+
+## How it is built
+Plain HTML, CSS and JavaScript in a single file (`index.html`), a service worker (`sw.js`) for offline use and notifications, and an optional Cloudflare Worker (`push-server/worker.js`) with a D1 database for Web Push and sync.
+
+## Honest note
+I built this with AI assistance (Claude). I decided what it should do, tested it on real devices, and found and reported the bugs. I'm now learning JavaScript properly to build the next project myself.
+
+## Known limits
+- Alerts with the screen off need the optional server and depend on the phone's battery settings
+- Voice needs Chrome on Android and an internet connection
+- Not on app stores
