@@ -405,7 +405,7 @@ function ensureNew(s){
   s.ntfy.sent=(s.ntfy.sent&&typeof s.ntfy.sent==='object')?s.ntfy.sent:{};
   for(const k in s.ntfy.sent){const v=s.ntfy.sent[k];if(typeof v==='number'){if(v>Date.now())s.ntfy.legacy=(s.ntfy.legacy||0)+1;delete s.ntfy.sent[k]}}
   if(s.ntfy.legacy&&!Object.keys(s.ntfy.sent).length&&s.ntfy.last&&Date.now()>s.ntfy.last+4*864e5)s.ntfy.legacy=0;
-  s.account=Object.assign({clientId:'94007468576-396pc43pp5avuquok0ula4k6uurci04n.apps.googleusercontent.com',name:'',email:''},s.account||{});if(!s.account.clientId)s.account.clientId='94007468576-396pc43pp5avuquok0ula4k6uurci04n.apps.googleusercontent.com';
+  s.account=Object.assign({clientId:'',name:'',email:''},s.account||{});
   if(!s.onb||typeof s.onb!=='object')s.onb={hidden:true};
   s.onb=Object.assign({hidden:true,study:false},s.onb);
   for(const it of s.items){if(!CAT[it.cat])it.cat='event';if(!it.date){it.date=null;it.time=''}it.dateStatus=(it.dateStatus==='confirmed'&&it.date)?'confirmed':'verify';it.rsvp=it.rsvp||'none';it.checklist=Array.isArray(it.checklist)?it.checklist:[]}
@@ -843,7 +843,7 @@ VIEWS.profile=()=>{
       ${sw('deadlines','Deadline reminders','Tasks, exams and deadlines, from 08:00 on the day they matter.')}
       <div class="setrow"><div><b>Deadline notice</b></div><select class="in" style="width:auto" id="nf-dl" data-nf="lead" aria-label="Deadline notice"><option value="1 day" ${S.notif.lead!=='same'?'selected':''}>The day before and on the day</option><option value="same" ${S.notif.lead==='same'?'selected':''}>Only on the day</option></select></div>
       ${sw('clashes','Clash warnings','Show overlaps under Needs attention.')}${sw('sound','Sound','A short chime with each reminder.')}
-      <div class="row" style="margin-top:12px"><button class="btn sm pri" data-act="remTest">Send a test reminder</button><button class="btn sm" data-act="remBrowser">Turn on browser alerts</button><button class="btn sm" data-act="icsOpen">Get phone alerts</button></div>
+      <div class="row" style="margin-top:12px"><button class="btn sm pri" data-act="remTest">Send a test reminder</button><button class="btn sm" data-act="remBrowser">Turn on browser alerts</button><button class="btn sm" data-act="ntfyGo">Alerts when app is closed</button></div>
       <p class="sm faint" style="margin-top:10px">Reminders appear on screen while AuraStudent is open in a tab. This preview cannot run in the background, so for alerts when the app is closed, export your calendar to Google Calendar and your phone will notify you.</p></section>
     <section class="card"><header><h2>Your data</h2></header><p class="sm muted" style="margin-bottom:12px">Everything is stored in this browser only. It works offline and is never sent anywhere.</p>
       <div class="row"><button class="btn sm" data-act="dataView">View my data</button><button class="btn sm" data-act="resetDemo">Reload demo data</button>
@@ -1388,7 +1388,7 @@ function bellModal(){
    <div><h3 style="margin-bottom:6px">Coming up</h3>${up.length?up.slice(0,6).map(u=>`<div class="dl"><div style="min-width:0"><b>${esc(u.txt)}</b><div class="sm muted">${esc(u.sub)}</div></div><span class="sm muted num" style="flex:none">${esc(u.when)}</span></div>`).join(''):'<p class="sm muted">Nothing pending today.</p>'}</div>
    <div class="row"><button class="btn pri" data-act="remTest">Send a test reminder</button><button class="btn" data-act="remBrowser">Allow system notifications</button></div>
    <p class="sm faint">System notifications: ${pt} Reminders only fire while AuraStudent is open. To be alerted when it is closed, export your calendar and import it into Google Calendar.</p>
-   <div class="row"><button class="btn sm" data-act="ntfyGo">Screen-off alerts with ntfy</button><button class="btn sm" data-act="icsOpen">Calendar alerts</button></div>`);
+   <div class="row"><button class="btn sm" data-act="ntfyGo">Alerts when app is closed</button><button class="btn sm" data-act="icsOpen">Calendar alerts</button></div>`);
 }
 let DEFERRED=null;
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();DEFERRED=e;renderNav()});
@@ -2219,7 +2219,6 @@ function ntfyCard(){
     <div class="row" style="grid-column:1/-1;flex-wrap:wrap"><button class="btn pri" name="go" value="${n.on?'off':'on'}">${n.on?'Turn off':'Turn on'}</button><button type="button" class="btn" data-act="ntfyTest">Send a test alert</button>${on?`<button type="button" class="btn" data-act="ntfyNow">${n.err?'Retry':'Refresh now'}</button>`:''}</div></form>
    <p class="sm faint" style="margin-top:10px">Delivery is not guaranteed. Phone battery saver, Do Not Disturb, notification permissions for ntfy, and a poor network can delay or block alerts, and so can the ntfy server. Use the test alert to check your phone. ntfy only schedules 3 days ahead, so open AuraStudent at least once every 2 days. When you edit or delete an item, its pending alert is replaced or cancelled the next time the app is open and online. This needs an ntfy server on version 2.16 or newer, and I cannot confirm that for you, so check your phone after big changes.</p></section>`;
 }
-{const _vp2=VIEWS.profile;VIEWS.profile=()=>_vp2()+ntfyCard()}
 F.ntfySave=async(d,f,ev)=>{
   const err=$('#nt-err'),topic=d.get('topic').trim(),server=d.get('server').trim(),want=(ev&&ev.submitter&&ev.submitter.value)||'on',consent=!!d.get('consent');
   if(!/^[A-Za-z0-9_-]{12,64}$/.test(topic)){err.textContent='Use a topic of 12 to 64 letters, numbers, dashes or underscores. Press Make a secret topic.';return}
@@ -2330,7 +2329,6 @@ function acctCard(){
     <div id="g-err" class="sm" style="grid-column:1/-1;color:var(--bad);font-weight:600" role="alert"></div>
     <div class="row" style="grid-column:1/-1;flex-wrap:wrap"><button class="btn pri">Sign in with Google</button></div></form><div id="g-btn" style="margin-top:12px"></div>`}</section>`;
 }
-{const _vp7=VIEWS.profile;VIEWS.profile=()=>_vp7()+acctCard()}
 F.gSave=async(d)=>{
   const id=(d.get('id')||'').trim(),err=$('#g-err');
   if(!gIdOK(id)){err.textContent='That does not look like a Google Client ID. It ends with .apps.googleusercontent.com';return}
@@ -2456,28 +2454,46 @@ COLS.push(['courses','Courses']);
 {const _ai=applyImport;applyImport=function(d,mode){const n=_ai(d,mode);if(mode==='replace'){S.courses=Array.isArray(d.courses)?d.courses:[];ensureNew(S)}return n}}
 {const _vb=validateBackup;validateBackup=function(raw){const r=_vb(raw);if(r&&r.d&&r.d.courses!==undefined){const c=r.d.courses;if(!Array.isArray(c))r.errs.push('"courses" must be a list.');else c.forEach((x,i)=>{if(!x||typeof x!=='object'||typeof x.id!=='string'||typeof x.name!=='string'||!x.name.trim())r.errs.push(`courses #${i+1}: missing id or name.`);else if(x.end&&!BDRE.test(x.end))r.errs.push(`courses #${i+1}: bad date.`)})}return r}}
 
-/* ================= Push alerts through your own server (Cloudflare Worker) ================= */
-const PU=()=>{const d={on:false,url:'',token:'',id:'',details:true,last:0,err:'',count:0};if(!S.push||typeof S.push!=='object')S.push={};for(const k in d)if(S.push[k]===undefined)S.push[k]=d[k];return S.push};
-const pushUrlOK=u=>/^https:\/\/[^\s\/]+(\/[^\s]*)?$/.test(u||'');
-const pushBase=()=>PU().url.replace(/\/+$/,'');
+/* ================= Alerts when the app is closed: Web Push through the AuraStudent server ================= */
+const PUSH_SERVER='https://calm-mouse-aeb6.sanjanathogoti21.workers.dev';
+const PU=()=>{const d={on:false,secret:'',id:'',last:0,err:'',count:0};if(!S.push||typeof S.push!=='object')S.push={};for(const k in d)if(S.push[k]===undefined)S.push[k]=d[k];return S.push};
+const pushBase=()=>PUSH_SERVER.replace(/\/+$/,'');
 const b64uToU8=s=>{const p=s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4),r=atob(p),u=new Uint8Array(r.length);for(let i=0;i<r.length;i++)u[i]=r.charCodeAt(i);return u};
-const u8ToB64u=u=>btoa(String.fromCharCode(...new Uint8Array(u))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-const pushErr=e=>{const m=e&&e.message;return(!m||m==='Failed to fetch'||m==='Load failed'||m==='NetworkError when attempting to fetch resource.')?'Could not reach your push server. Check the address and your connection.':m};
+const u8ToB64u=u=>{u=new Uint8Array(u);let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode(...u.subarray(i,i+8192));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
+const u8cat=(...a)=>{const o=new Uint8Array(a.reduce((n,x)=>n+x.length,0));let i=0;for(const x of a){o.set(x,i);i+=x.length}return o};
+const pushErr=e=>{const m=e&&e.message;return(!m||m==='Failed to fetch'||m==='Load failed'||m==='NetworkError when attempting to fetch resource.')?'Could not reach the AuraStudent server. Check your connection and try again.':m};
 async function pushApi(path,body){
-  const P=PU(),r=await fetch(pushBase()+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+P.token},body:JSON.stringify(body)});
+  let r;try{r=await fetch(pushBase()+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}catch(e){throw new Error(pushErr(e))}
   let j={};try{j=await r.json()}catch(e){}
   if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
   return j;
 }
-async function pushSubscribe(){
+/* RFC 8291: encrypt a message so only this browser can read it. The server just forwards it. */
+async function pushEnc(sub,plain){
+  const ua=new Uint8Array(sub.getKey('p256dh')),auth=new Uint8Array(sub.getKey('auth')),te=new TextEncoder();
+  const kp=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
+  const asPub=new Uint8Array(await crypto.subtle.exportKey('raw',kp.publicKey));
+  const uaKey=await crypto.subtle.importKey('raw',ua,{name:'ECDH',namedCurve:'P-256'},false,[]);
+  const secret=new Uint8Array(await crypto.subtle.deriveBits({name:'ECDH',public:uaKey},kp.privateKey,256));
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const hk=async(s,ikm,info,len)=>new Uint8Array(await crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256',salt:s,info},await crypto.subtle.importKey('raw',ikm,'HKDF',false,['deriveBits']),len*8));
+  const ikm=await hk(auth,secret,u8cat(te.encode('WebPush: info\0'),ua,asPub),32);
+  const cek=await hk(salt,ikm,te.encode('Content-Encoding: aes128gcm\0'),16),nonce=await hk(salt,ikm,te.encode('Content-Encoding: nonce\0'),12);
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce},await crypto.subtle.importKey('raw',cek,'AES-GCM',false,['encrypt']),u8cat(te.encode(plain),new Uint8Array([2]))));
+  return u8cat(salt,new Uint8Array([0,0,16,0]),new Uint8Array([asPub.length]),asPub,ct);
+}
+async function pushRegister(){
   if(!('serviceWorker' in navigator)||!('PushManager' in window))throw new Error('This browser cannot receive push alerts. On iPhone, add the app to the Home Screen first.');
   const reg=await Promise.race([navigator.serviceWorker.ready,new Promise((_,j)=>setTimeout(()=>j(new Error('Open the installed https version of the app to turn this on.')),8000))]);
-  const kr=await fetch(pushBase()+'/vapid');if(!kr.ok)throw new Error('Could not reach the server. Check the address.');
-  const key=(await kr.json()).key;if(!key)throw new Error('The server did not return a key.');
+  let r;try{r=await fetch(pushBase()+'/vapid')}catch(e){throw new Error(pushErr(e))}
+  if(!r.ok)throw new Error('Could not reach the AuraStudent server.');
+  const key=(await r.json()).key;if(!key)throw new Error('The server did not return a key.');
   let sub=await reg.pushManager.getSubscription();
   if(sub){const cur=sub.options&&sub.options.applicationServerKey;if(cur&&u8ToB64u(cur)!==key){await sub.unsubscribe();sub=null}}
   if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uToU8(key)});
-  return (await pushApi('/subscribe',{sub:sub.toJSON()})).id;
+  const P=PU();if(!P.secret)P.secret=u8ToB64u(crypto.getRandomValues(new Uint8Array(24)));
+  const id=(await pushApi('/register',{sub:sub.toJSON(),secret:P.secret})).id;
+  return {id,sub};
 }
 let pushBusy=false,pushT;
 async function pushSync(manual){
@@ -2485,13 +2501,15 @@ async function pushSync(manual){
   if(!navigator.onLine){if(manual)toast('You are offline. Alerts will sync when you are back online.');return}
   pushBusy=true;
   try{
-    P.id=await pushSubscribe();
-    const keep=S.ntfy.privacy;S.ntfy.privacy=P.details?'details':'generic';let plan;try{plan=ntfyPlan()}finally{S.ntfy.privacy=keep}
-    const r=await pushApi('/schedule',{id:P.id,items:plan.slice(0,200).map(p=>({seq:p.seq,at:p.at,title:p.title,msg:p.msg}))});
+    const {id,sub}=await pushRegister();P.id=id;
+    const keep=S.ntfy.privacy;S.ntfy.privacy='details';let plan;try{plan=ntfyPlan()}finally{S.ntfy.privacy=keep}
+    const items=[];
+    for(const p of plan.slice(0,120))items.push({seq:p.seq,at:p.at,body:u8ToB64u(await pushEnc(sub,JSON.stringify({title:p.title,body:p.msg,tag:p.seq})))});
+    const r=await pushApi('/schedule',{id,secret:P.secret,items});
     P.last=Date.now();P.err='';P.count=r.scheduled||0;
   }catch(e){P.err=pushErr(e)}
   pushBusy=false;rawSave();
-  if(manual)toast(P.err?'Could not sync: '+P.err:`Synced. ${P.count} upcoming alert${P.count===1?'':'s'} on your server.`);
+  if(manual)toast(P.err?'Could not sync: '+P.err:`Alerts are set. ${P.count} upcoming alert${P.count===1?'':'s'} scheduled.`);
   if(UI.view==='profile'&&!$('#modal').innerHTML)render();
 }
 const pushLater=()=>{clearTimeout(pushT);pushT=setTimeout(()=>pushSync(false),2500)};
@@ -2500,37 +2518,31 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&PU().on&&
 setTimeout(()=>{if(PU().on)pushSync(false)},3000);
 function pushCard(){
   const P=PU(),on=P.on;
-  return `<section class="card" aria-labelledby="pu-h"><header><h2 id="pu-h">Push alerts that work when the app is closed</h2><span class="pill ${on?'ok':''}">${on?'On':'Off'}</span></header>
-   <p class="sm muted"><b>Optional, for advanced users.</b> The app works fully without this: reminders show while it is open. Alerts arrive like any app's notifications, even when AuraStudent is closed or the screen is off. They come from a small server you set up once in your own free Cloudflare account. <a href="push-setup.html" target="_blank" rel="noopener">Open the setup guide</a>. Use this or phone alerts with ntfy, not both.</p>
-   ${on?`<div class="sm" style="margin-top:10px">${P.err?`<span style="color:var(--bad)">${esc(P.err)}</span>`:`${P.count} upcoming alert${P.count===1?'':'s'} are on your server${P.last?', last synced '+ago(P.last):''}.`}</div>
-    <label class="row" style="gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" ${P.details?'checked':''} data-act="pushDetails"><span class="sm">Show the real title and time in alerts. Turn off to show only "You have an upcoming AuraStudent item."</span></label>
-    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="pushTest">Send a test</button><button class="btn" data-act="pushSyncNow">Sync now</button><button class="btn ghost" data-act="pushOff">Turn off</button></div>`
-   :`<div class="fgrid" style="margin-top:10px"><label class="f" style="grid-column:1/-1">Server address<input class="in" id="pu-url" value="${esc(P.url)}" placeholder="https://aurastudent-push.yourname.workers.dev" autocomplete="off" spellcheck="false"></label>
-    <label class="f" style="grid-column:1/-1">Access token<input class="in" id="pu-tok" type="password" value="${esc(P.token)}" autocomplete="off" spellcheck="false"></label></div>
-    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="pushOn">Turn on push alerts</button></div>${P.err?`<p class="sm" style="color:var(--bad);margin-top:8px">${esc(P.err)}</p>`:''}`}
-   <p class="sm faint" style="margin-top:10px">Your reminder times and text are stored on your own server so it can deliver them. Nothing is sent anywhere else. Delivery depends on your phone, its battery settings and the network.</p></section>`;
+  return `<section class="card" aria-labelledby="pu-h"><header><h2 id="pu-h">Alerts when the app is closed</h2><span class="pill ${on?'ok':''}">${on?'On':'Off'}</span></header>
+   <p class="sm muted">Get reminders as normal phone notifications, even when AuraStudent is closed or the screen is off. One tap, nothing to set up. Your reminder text is encrypted on your device, so the server only sees when to deliver it.</p>
+   ${on?`<div class="sm" style="margin-top:10px">${P.err?`<span style="color:var(--bad)">${esc(P.err)}</span>`:`${P.count} upcoming alert${P.count===1?'':'s'} scheduled${P.last?', updated '+ago(P.last):''}.`}</div>
+    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="pushTest">Send a test</button><button class="btn" data-act="pushSyncNow">Refresh</button><button class="btn ghost" data-act="pushOff">Turn off</button></div>`
+   :`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="pushOn">Turn on alerts</button></div>${P.err?`<p class="sm" style="color:var(--bad);margin-top:8px">${esc(P.err)}</p>`:''}`}
+   <p class="sm faint" style="margin-top:10px">Works in Chrome on Android and in the installed app on iPhone. Delivery depends on your phone's battery settings and network, and is not guaranteed.</p></section>`;
 }
 {const _vp10=VIEWS.profile;VIEWS.profile=()=>_vp10()+pushCard()}
 Object.assign(A,{
  pushOn:async()=>{
-   const P=PU(),url=($('#pu-url')||{}).value.trim().replace(/\/+$/,''),tok=($('#pu-tok')||{}).value.trim();
-   if(!pushUrlOK(url)){toast('Enter the server address, starting with https://');return}
-   if(!tok){toast('Enter the access token');return}
+   const P=PU();
    if(!('Notification' in window)){toast('This browser cannot show notifications.');return}
    let perm='default';try{perm=await Notification.requestPermission()}catch(e){}
    if(perm!=='granted'){P.err='Notifications are blocked. Allow them for this site in your browser settings, then try again.';rawSave();render();return}
-   P.url=url;P.token=tok;P.err='';
-   try{P.id=await pushSubscribe();P.on=true;save();toast('Push alerts are on. Syncing...');await pushSync(true)}
+   try{P.err='';await pushRegister();P.on=true;save();toast('Alerts are on. Setting them up...');await pushSync(true)}
    catch(e){P.on=false;P.err=pushErr(e);rawSave();render();toast('Could not turn on: '+P.err)}
  },
- pushTest:async()=>{try{await pushApi('/test',{id:PU().id});toast('Test sent. It should appear in a few seconds.')}catch(e){toast('Test failed: '+pushErr(e))}},
+ pushTest:async()=>{try{const P=PU(),{id,sub}=await pushRegister();await pushApi('/test',{id,secret:P.secret,body:u8ToB64u(await pushEnc(sub,JSON.stringify({title:'AuraStudent',body:'Alerts are working. Reminders will arrive even when the app is closed.',tag:'test'})))});toast('Test sent. It should appear in a few seconds.')}catch(e){toast('Test failed: '+pushErr(e))}},
  pushSyncNow:()=>pushSync(true),
- pushDetails:()=>{const P=PU();P.details=!P.details;save();render()},
  pushOff:async()=>{
-   const P=PU();try{await pushApi('/unsubscribe',{id:P.id})}catch(e){}
+   const P=PU();try{await pushApi('/unregister',{id:P.id,secret:P.secret})}catch(e){}
    try{const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();if(sub)await sub.unsubscribe()}catch(e){}
-   P.on=false;P.id='';P.err='';P.count=0;rawSave();render();toast('Push alerts are off');
- }
+   P.on=false;P.id='';P.err='';P.count=0;rawSave();render();toast('Alerts are off');
+ },
+ ntfyGo:()=>{go('profile');setTimeout(()=>{const e=$('#pu-h');if(e)e.scrollIntoView({behavior:'smooth',block:'center'})},80)}
 });
 {const _ai2=applyImport;applyImport=function(d,mode){const kp=S.push;const n=_ai2(d,mode);if(kp)S.push=kp;return n}}
 {const _eo=exportObj;exportObj=function(){const o=_eo();if(o&&o.data)delete o.data.push;return o}}
@@ -2777,7 +2789,7 @@ const vf=document.createElement('button');vf.className='vfab';vf.id='vfab';vf.se
 A.mic=()=>voiceTap();
 
 /* ================= Sync between devices (through your own server) ================= */
-const SY=()=>{const d={on:false,url:'',token:'',code:'',key:'',rev:0,meta:{},last:0,err:'',synced:false};if(!S.sync||typeof S.sync!=='object')S.sync={};for(const k in d)if(S.sync[k]===undefined)S.sync[k]=d[k];return S.sync};
+const SY=()=>{const d={on:false,code:'',key:'',rev:0,meta:{},last:0,err:'',synced:false};if(!S.sync||typeof S.sync!=='object')S.sync={};for(const k in d)if(S.sync[k]===undefined)S.sync[k]=d[k];return S.sync};
 const SYNC_COLS=['events','tasks','habits','items','hacks','comms','templates','courses'];
 const SYNC_OBJS=['profile','notif'];
 const SY_SIG={events:r=>[r.title,r.date,r.start,r.end,r.rec||''].join('|'),tasks:r=>[r.title,r.due||''].join('|'),habits:r=>r.name,items:r=>[r.title,r.date||'',r.time||''].join('|'),hacks:r=>r.title,comms:r=>r.name,templates:r=>[r.name,r.title,r.start].join('|'),courses:r=>r.name};
@@ -2785,19 +2797,23 @@ const sySig=(c,r)=>String(SY_SIG[c](r)||'').trim().toLowerCase();
 const syStable=v=>v===null||typeof v!=='object'?JSON.stringify(v===undefined?null:v):Array.isArray(v)?'['+v.map(syStable).join(',')+']':'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+syStable(v[k])).join(',')+'}';
 const syH=v=>hash36(syStable(v));
 const syClone=v=>JSON.parse(JSON.stringify(v));
-const syUrlOK=u=>pushUrlOK(u)||/^http:\/\/localhost(:\d+)?(\/\S*)?$/.test(u||'');
 const syNorm=c=>String(c||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 async function syKey(code){const d=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('aurastudent-sync|'+syNorm(code))));return [...d].map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,40)}
 function syNewCode(){const al='abcdefghjkmnpqrstuvwxyz23456789',a=crypto.getRandomValues(new Uint8Array(20));let s='';for(let i=0;i<20;i++){s+=al[a[i]%al.length];if(i%4===3&&i<19)s+='-'}return s}
 async function syApi(path,body){
-  const Y=SY();let r;
-  try{r=await fetch(Y.url.replace(/\/+$/,'')+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+Y.token},body:JSON.stringify(body)})}
-  catch(e){throw new Error('Could not reach your server. Check the address and your connection.')}
+  let r;
+  try{r=await fetch(pushBase()+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
+  catch(e){throw new Error('Could not reach the AuraStudent server. Check your connection.')}
   let j={};try{j=await r.json()}catch(e){}
   if(r.status===409)return Object.assign({conflict:true},j);
   if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
   return j;
 }
+/* records are encrypted with a key made from the sync code, so the server only stores opaque blobs */
+let syCK=null,syCKc='';
+async function syCrypt(){const Y=SY();if(syCK&&syCKc===Y.code)return syCK;const raw=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('aurastudent-enc|'+syNorm(Y.code)));syCK=await crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt']);syCKc=Y.code;return syCK}
+async function syEnc(recs){const k=await syCrypt(),o={};for(const id in recs){const r=recs[id];if(r.d||r.v===undefined){o[id]=r;continue}const iv=crypto.getRandomValues(new Uint8Array(12)),ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(JSON.stringify(r.v))));o[id]={t:r.t,v:u8ToB64u(u8cat(iv,ct))}}return o}
+async function syDec(recs){const k=await syCrypt(),o={};for(const id in recs){const r=recs[id];if(r.d||typeof r.v!=='string'){o[id]=r;continue}try{const u=b64uToU8(r.v),pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},k,u.slice(12));o[id]={t:r.t,v:JSON.parse(new TextDecoder().decode(pt))}}catch(e){throw new Error('The sync code does not match the data on the server. Check the code from your other device.')}}return o}
 /* what this device has now, with a change time for each record */
 function syLocal(now){
   const Y=SY(),meta=Y.meta,out={},tc=(Y.dirty>0&&Y.dirty<=now)?Y.dirty:now;
@@ -2844,7 +2860,7 @@ async function syncNow(manual){
   syBusy=true;let changedAny=false,fin=false;
   try{
     for(let i=0;i<4&&!fin;i++){
-      const pull=await syApi('/sync/pull',{key:Y.key}),now=Date.now(),R=pull.recs||{},first=!Y.synced;
+      const pull=await syApi('/sync/pull',{key:Y.key}),now=Date.now(),R=await syDec(pull.recs||{}),first=!Y.synced;
       if(first){ /* first connection: drop local copies of things the other device already has */
         const have={};for(const k in R){const r=R[k];if(!r.d&&r.v){const c=k.split('|')[0];if(SYNC_COLS.includes(c))(have[c]=have[c]||new Set()).add(sySig(c,r.v))}}
         for(const c of SYNC_COLS){if(!have[c]||!Array.isArray(S[c]))continue;S[c]=S[c].filter(x=>{if(!x||typeof x.id!=='string')return true;const k=c+'|'+x.id;return R[k]||!have[c].has(sySig(c,x))})}
@@ -2855,7 +2871,7 @@ async function syncNow(manual){
       const meta={};for(const k in M){const m=M[k];if(m.d&&now-m.t>45*86400e3)continue;meta[k]={h:m.d?null:syH(m.v),t:m.t,d:!!m.d}}
       Y.meta=meta;
       if(syStable(recs)===syStable(R)){Y.rev=pull.rev;fin=true;break}
-      const res=await syApi('/sync/push',{key:Y.key,rev:pull.rev,recs});
+      const res=await syApi('/sync/push',{key:Y.key,rev:pull.rev,recs:await syEnc(recs)});
       if(res.conflict)continue;
       Y.rev=res.rev;fin=true;
     }
@@ -2871,31 +2887,27 @@ async function syncNow(manual){
 const syLater=()=>{clearTimeout(syT);syT=setTimeout(()=>syncNow(false),4000)};
 {const _sv2=save;save=function(){_sv2();if(SY().on){SY().dirty=Date.now();syLater()}}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&SY().on&&Date.now()-SY().last>60000)syncNow(false)});
-setInterval(()=>{if(!document.hidden&&SY().on&&Date.now()-SY().last>120000)syncNow(false)},30000);
+setInterval(()=>{if(!document.hidden&&SY().on&&Date.now()-SY().last>300000)syncNow(false)},60000);
 setTimeout(()=>{if(SY().on)syncNow(false)},3500);
 function syncCard(){
-  const Y=SY(),P=PU(),on=Y.on;
-  return `<section class="card" aria-labelledby="sy-h"><header><h2 id="sy-h">Sync your phone and laptop</h2><span class="pill ${on?'ok':''}">${on?'On':'Off'}</span></header>
-   <p class="sm muted"><b>Optional, for advanced users.</b> The app works fully on one device without this. Enter things once and they appear on every device. Changes merge automatically, including when one device was offline. It uses the same server as push alerts (<a href="push-setup.html" target="_blank" rel="noopener">setup guide</a>), so your data stays in your own account.</p>
+  const Y=SY(),on=Y.on;
+  return `<section class="card" aria-labelledby="sy-h"><header><h2 id="sy-h">Use on phone and laptop</h2><span class="pill ${on?'ok':''}">${on?'On':'Off'}</span></header>
+   <p class="sm muted">Enter things once and they appear on every device. Your data is encrypted on your device with a code only you have, so nobody else can read it, including the server.</p>
    ${on?`<div class="sm" style="margin-top:10px">${Y.err?`<span style="color:var(--bad)">${esc(Y.err)}</span>`:`Last synced ${Y.last?ago(Y.last):'not yet'}.`}</div>
-    <div class="f" style="margin-top:10px"><span class="sm muted">Your sync code. Enter it on your other device. Keep it private.</span><div class="row" style="margin-top:4px;flex-wrap:wrap;gap:8px"><code id="sy-code" style="font-size:15px;padding:8px 10px;background:var(--surface-2);border-radius:8px;overflow-wrap:anywhere">${esc(Y.code)}</code><button class="btn sm" data-act="syCopy">Copy code</button></div></div>
+    <div class="f" style="margin-top:10px"><span class="sm muted">Your sync code. Type it on your other device. Keep it private, it cannot be recovered if you lose it.</span><div class="row" style="margin-top:4px;flex-wrap:wrap;gap:8px"><code id="sy-code" style="font-size:15px;padding:8px 10px;background:var(--surface-2);border-radius:8px;overflow-wrap:anywhere">${esc(Y.code)}</code><button class="btn sm" data-act="syCopy">Copy code</button></div></div>
     <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="syNow">Sync now</button><button class="btn ghost" data-act="syOff">Turn off</button><button class="btn ghost" data-act="syDel">Turn off and delete server copy</button></div>`
-   :`<div class="fgrid" style="margin-top:10px"><label class="f" style="grid-column:1/-1">Server address<input class="in" id="sy-url" value="${esc(Y.url||P.url)}" placeholder="https://aurastudent-push.yourname.workers.dev" autocomplete="off" spellcheck="false"></label>
-    <label class="f" style="grid-column:1/-1">Access token<input class="in" id="sy-tok" type="password" value="${esc(Y.token||P.token)}" autocomplete="off" spellcheck="false"></label>
-    <label class="f" style="grid-column:1/-1">Sync code<input class="in" id="sy-code-in" value="${esc(Y.code)}" placeholder="Leave empty on your first device" autocomplete="off" spellcheck="false"></label></div>
-    <p class="sm faint" style="margin-top:6px">First device: leave the code empty and a new one is made. Second device: enter the same server address, token and the code from the first device.</p>
-    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="syOn">Turn on sync</button></div>${Y.err?`<p class="sm" style="color:var(--bad);margin-top:8px">${esc(Y.err)}</p>`:''}`}
-   <p class="sm faint" style="margin-top:10px">If you delete something on one device it is deleted on the others. Restoring a backup counts as changes too. If two devices change the same item, the newer change wins.</p></section>`;
+   :`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" data-act="syOn">Turn on sync</button></div>
+    <label class="f" style="margin-top:12px">Already turned it on another device? Enter its code<input class="in" id="sy-code-in" placeholder="xxxx-xxxx-xxxx-xxxx-xxxx" autocomplete="off" spellcheck="false"></label>
+    ${Y.err?`<p class="sm" style="color:var(--bad);margin-top:8px">${esc(Y.err)}</p>`:''}`}
+   <p class="sm faint" style="margin-top:10px">If you delete something on one device it is deleted on the others. If two devices change the same item, the newer change wins.</p></section>`;
 }
 {const _vp12=VIEWS.profile;VIEWS.profile=()=>_vp12()+syncCard()}
 Object.assign(A,{
  syOn:async()=>{
-   const Y=SY(),url=($('#sy-url')||{}).value.trim().replace(/\/+$/,''),tok=($('#sy-tok')||{}).value.trim();let code=($('#sy-code-in')||{}).value.trim();
-   if(!syUrlOK(url)){toast('Enter the server address, starting with https://');return}
-   if(!tok){toast('Enter the access token');return}
+   const Y=SY();let code=(($('#sy-code-in')||{}).value||'').trim();
    if(code&&syNorm(code).length<16){toast('That sync code looks too short. Copy it again from your other device.');return}
    if(!code)code=syNewCode();
-   Y.url=url;Y.token=tok;Y.code=code;Y.key=await syKey(code);Y.rev=0;Y.meta={};Y.synced=false;Y.err='';Y.on=true;
+   Y.code=code;Y.key=await syKey(code);Y.rev=0;Y.meta={};Y.synced=false;Y.err='';Y.on=true;syCK=null;
    await syncNow(true);
    if(Y.err){Y.on=false;rawSave();render()}else render();
  },
@@ -2912,5 +2924,5 @@ render();
 setInterval(()=>{if(UI.view==='today'&&!$('#modal').innerHTML&&!document.activeElement.closest('form'))render()},60000);
 setTimeout(checkReminders,1500);setInterval(checkReminders,30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkReminders()});
 </script>
-
-
+<script>if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
+</body></html>

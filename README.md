@@ -12,11 +12,11 @@ A personal student planner I built as a first-year B.Tech student at NIAT. It pu
 - Installs on phone and laptop as a PWA and works offline
 - Backup and restore as a JSON file
 
-## Optional extras (advanced)
-- **Push alerts when the app is closed** and **sync between devices** use a small Cloudflare Worker you run in your own free account. Setup guide: `push-setup.html`. Without it the app still works fully on one device, and reminders show while it is open.
+## Phone alerts and sync (one tap, no setup)
+- **Alerts when the app is closed** and **sync between devices** are one tap in Profile. Users enter nothing. Reminder text and synced data are encrypted on the device (sync uses a code only the user has), so the shared server only sees delivery times and unreadable data. The app works fully on one device without them. Server owner guide: `push-setup.html`.
 
 ## Privacy
-Everything is stored in your own browser. There is no account and no analytics. Nothing leaves your device unless you turn on the optional server features, and then it goes only to your own server.
+Everything is stored in your own browser. There is no account and no analytics. If a user turns on alerts or sync, encrypted data goes to the shared AuraStudent server (a free Cloudflare Worker). The free plan serves tens of daily users, not thousands.
 
 ## How it is built
 Plain HTML, CSS and JavaScript in a single file (`index.html`), a service worker (`sw.js`) for offline use and notifications, and an optional Cloudflare Worker (`push-server/worker.js`) with a D1 database for Web Push and sync.
