@@ -2798,7 +2798,7 @@ function vWakeHeard(alts,final){
     vRun(cmds[0],cmds.slice(1));return;
   }
   /* just "Hey Aura": open a clean listening session instead of relying on the always-on stream */
-  VOLOCK=Date.now()+3000;vWakeStop();vChirp();vBanner('Yes? Say a command.','',true);setTimeout(()=>voiceTap(),450);
+  VOLOCK=Date.now()+3000;vWakeStop();vChirp();vBanner('Yes? Say a command.','',true);setTimeout(()=>voiceTap(true),450);
 }
 function vWakeStart(){
   if(!SR||!VC().wake||document.hidden||VOREC||VOWAKE)return;
@@ -2810,19 +2810,25 @@ function vWakeStart(){
     r.start();
   }catch(e){VOWAKE=null}
 }
-function voiceTap(){
+function voiceTap(again){
   if(VOREC){try{VOREC.stop()}catch(e){}return}
   if(!SR){toast('Voice input is not supported in this browser. Use Chrome on Android.');return}
-  vWakeStop();let fin='',err='',alts=[],nf=0;
+  if(VOWAKE&&!again){vWakeStop();vBanner('Starting the microphone...','',true);setTimeout(()=>voiceTap(true),450);return}
+  vWakeStop();let fin='',err='',alts=[],nf=0,lastI='',got=false;
   try{
     const r=new SR();VOREC=r;r.lang='en-IN';r.interimResults=true;r.continuous=false;vHints(r);
     r.onstart=()=>{vBanner('Listening...','',true);const f=$('#vfab');if(f)f.classList.add('on')};
-    r.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal){fin+=x[0].transcript+' ';nf++;alts=nf>1?[]:vAlts(x)}else it+=x[0].transcript}vBanner(fin||it||'Listening...','',true)};
+    r.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal){fin+=x[0].transcript+' ';nf++;alts=nf>1?[]:vAlts(x)}else it+=x[0].transcript}if(it)lastI=it;got=true;vBanner(fin||it||'Listening...','',true)};
     r.onerror=e=>{err=e.error||'error'};
     r.onend=()=>{VOREC=null;const f=$('#vfab');if(f)f.classList.remove('on');
+      if(!fin.trim()&&lastI.trim()&&(!err||err==='no-speech'||err==='aborted')){fin=lastI;alts=[]}
       if(fin.trim()){const cl=t=>t.replace(/^\s*(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b[\s,.:]*/i,'');vRun(fin.trim(),alts.map(cl).filter(Boolean))}
       else if(err==='not-allowed'||err==='service-not-allowed')vBanner('The microphone is blocked. Allow it for this site in your browser settings.');
       else if(err==='network')vBanner('Voice needs an internet connection.');
+      else if(err==='audio-capture')vBanner('No microphone found, or another app is using it. Close it and try again.');
+      else if(err==='language-not-supported')vBanner('Your browser does not support this voice language.');
+      else if(err==='no-speech')vBanner('I heard nothing. Tap the mic, wait for Listening, then speak.');
+      else if(err==='aborted')vBanner('Listening was interrupted. Tap the mic and try again.');
       else vBanner('I did not catch that. Tap the mic and try again.');
       vWakeResume()};
     r.start();
@@ -2831,7 +2837,7 @@ function voiceTap(){
 document.addEventListener('visibilitychange',()=>{if(document.hidden)vWakeStop();else vWakeResume()});
 setTimeout(()=>{if(VC().wake)vWakeStart()},2500);
 Object.assign(A,{
- voice:voiceTap,
+ voice:()=>voiceTap(),
  voiceUndo:()=>{const u=VU;if(u){VU=null;try{u()}catch(e){}}},
  voiceClose:()=>{const b=$('#vbanner');if(b)b.classList.remove('on')},
  voiceSpeak:()=>{const v=VC();v.speak=!v.speak;save();render()},
