@@ -390,7 +390,7 @@ const DEFTPL=()=>[
   {id:'tp2',name:'Revise the day’s lectures',title:'Revise lecture notes',dur:45,days:[0,1,2,3,4],start:'19:00',note:'Rewrite the key points from memory.'},
   {id:'tp3',name:'Weekly review',title:'Weekly review and plan',dur:30,days:[6],start:'18:00',note:'Check deadlines, verify dates, plan next week.'}
 ];
-function freshStart(){const s=seed();s.events=[];s.tasks=[];s.habits=s.habits.map(h=>({...h,log:{}}));s.onb={hidden:false,study:false};return s}
+function freshStart(){const s=seed();s.events=[];s.tasks=[];s.habits=[];s.templates=[];s.onb={hidden:false,study:false};return s}
 function ensureNew(s){
   if(s.profile&&typeof s.profile==='object'&&s.profile.term===undefined)s.profile.term='';
   s.courses=Array.isArray(s.courses)?s.courses:[];
@@ -965,7 +965,7 @@ const A={
  dataCopy:()=>{const t=$('#data-out');t.select();(navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).then(()=>toast('Copied')).catch(()=>toast('Press Ctrl+C to copy the selected text'))},
  resetDemo:()=>{S=seed();save();render();toast('Demo data loaded')},
  wipeAsk:()=>{UI.confirmWipe=true;render()},wipeCancel:()=>{UI.confirmWipe=false;render()},
- wipe:()=>{const s=seed();S={...s,profile:{...s.profile,name:'',skills:[],interests:[],growth:[],subjects:[],goals:''},events:[],tasks:[],habits:[],sugs:[],rooms:[],courses:[]};UI.confirmWipe=false;try{localStorage.removeItem(KEY)}catch(e){}save();render();toast('All your data was deleted')}
+ wipe:()=>{const keep={ntfy:S.ntfy,push:S.push,sync:S.sync,voice:S.voice,account:{clientId:(S.account&&S.account.clientId)||'',name:'',email:''}};S=Object.assign(freshStart(),keep);ensureNew(S);UI.confirmWipe=false;try{localStorage.removeItem(KEY)}catch(e){}save();render();toast('All your data was deleted')}
 };
 const F={
  evSave:(d,f)=>{
@@ -2185,7 +2185,7 @@ window.addEventListener('online',()=>ntfyLater());
 /* keep alert settings when demo data is reloaded or everything is wiped, then cancel alerts for items that no longer exist */
 {const _rd=A.resetDemo,_wp=A.wipe;
  A.resetDemo=el=>{const k=S.ntfy,ac=S.account;_rd(el);S.ntfy=k;S.account=ac;save()};
- A.wipe=el=>{const k=S.ntfy,ac=S.account;_wp(el);S.ntfy=k;S.account=ac;save()};}
+ A.wipe=el=>{const k=S.ntfy;_wp(el);S.ntfy=k;save()};}
 
 /* in-app prompt: only when alerts are about to run out or the last attempt failed */
 function ntfyBanner(){
