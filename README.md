@@ -8,7 +8,6 @@ A personal student planner I built as a first-year B.Tech student at NIAT. It pu
 - Calendar and tasks with clash detection and a smart study plan
 - Hackathon, community and course tracking, with dates marked "confirmed" or "needs verification"
 - Reminders before classes and deadlines, including a due time on tasks
-- Voice commands (tap the mic): "add task physics lab tomorrow at 5 pm", "open courses"
 - Installs on phone and laptop as a PWA and works offline
 - Backup and restore as a JSON file
 
@@ -26,5 +25,4 @@ I built this with AI assistance (Claude). I decided what it should do, tested it
 
 ## Known limits
 - Alerts with the screen off need the optional server and depend on the phone's battery settings
-- Voice needs Chrome on Android and an internet connection
 - Not on app stores
