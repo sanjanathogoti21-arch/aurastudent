@@ -493,11 +493,51 @@ function freeIntervals(date,extra){
 const overlap=(a0,a1,b0,b1)=>Math.max(0,Math.min(a1,b1)-Math.max(a0,b0));
 const cmpTask=(a,b)=>((a.due||'9999')<(b.due||'9999')?-1:(a.due||'9999')>(b.due||'9999')?1:b.prio-a.prio);
 function remainMin(t){return Math.max(0,Math.round(t.est*((S.learn.estMult||{})[t.subject]||1)*60-(t.sched||0)))}
+/* fills the rest of today, from now until the end of the day window, around what is already scheduled */
+function todayFill(){
+  const p=S.profile,t0=today(),len=Math.max(15,+p.sessionLen),b=+p.buffer,pk=PEAK[p.peak]||PEAK.morning,out={res:[],used:{},from:0,to:0};
+  const w1=mins(p.availEnd),st=Math.max(mins(p.availStart),Math.ceil((nowM()+5)/5)*5);
+  if(st>w1-15)return out;
+  const busy=occ(t0).filter(e=>e.type!=='rest'&&e.type!=='deadline').map(e=>[mins(e.start)-b,mins(e.end)+b]).concat([[780,825],[1200,1245]]).sort((a,c)=>a[0]-c[0]); /* lunch 13:00 and dinner 20:00 are kept free */
+  const gaps=[];let cur=st,total=0;
+  for(const [a,e] of busy){if(e<=cur)continue;if(a>cur)gaps.push([cur,Math.min(a,w1)]);cur=Math.max(cur,e);if(cur>=w1)break}
+  if(cur<w1)gaps.push([cur,w1]);
+  const T=S.tasks.filter(x=>!x.done).map(t=>({t,remain:remainMin(t)})).filter(x=>x.remain>=10);
+  const urg=t=>{const d=t.due?between(t0,t.due):30;return (t.due&&t.due<t0?100:t.due===t0?90:Math.max(0,60-d*4))+(t.prio||2)*8};
+  let last=null;
+  for(const [g0,g1] of gaps){
+    let c=g0;
+    while(g1-c>=15&&total<p.cap*60){
+      let best=null;
+      for(const x of T){
+        if(x.remain<10)continue;
+        const ch=Math.min(len,x.remain,g1-c);if(ch<10)continue;
+        const ov=overlap(c,c+ch,pk[0],pk[1])/ch;
+        const sc=urg(x.t)+ov*((x.t.prio||2)>=3?18:6)-(last===x?14:0);
+        if(!best||sc>best.sc)best={sc,x,ch};
+      }
+      if(!best)break;
+      let ch=best.ch;if(best.x.remain-ch>0&&best.x.remain-ch<15&&c+best.x.remain<=g1)ch=best.x.remain;
+      const bits=[];
+      if(best.x.t.due)bits.push(best.x.t.due<t0?'overdue':best.x.t.due===t0?'due today':'due '+fd(best.x.t.due));
+      if(overlap(c,c+ch,pk[0],pk[1])/ch>=.5)bits.push(`inside your ${p.peak} focus window`);
+      bits.push(`fits ${hm(g0)} to ${hm(g1)} between your commitments`);
+      out.res.push({id:uid(),taskId:best.x.t.id,title:best.x.t.title,date:t0,start:hm(c),end:hm(c+ch),reason:bits.join('. ').replace(/^./,m=>m.toUpperCase())+'.'});
+      out.used[best.x.t.id]=(out.used[best.x.t.id]||0)+ch;best.x.remain-=ch;last=best.x;
+      c+=ch+b;total+=ch;
+    }
+  }
+  out.capped=total>=p.cap*60;
+  if(out.res.length){out.from=mins(out.res[0].start);out.to=mins(out.res[out.res.length-1].end)}
+  return out;
+}
 function generatePlan(){
   const p=S.profile,t0=today(),len=+p.sessionLen,planned={},res=[],unplaced=[];
   const pk=PEAK[p.peak]||PEAK.morning;
+  const pre=todayFill();
+  for(const x of pre.res){res.push(x);(planned[t0]=planned[t0]||[]).push([mins(x.start),mins(x.end)])}
   for(const t of S.tasks.filter(x=>!x.done).sort(cmpTask)){
-    let remain=remainMin(t);if(remain<30)continue;
+    let remain=remainMin(t)-(pre.used[t.id]||0);if(remain<30)continue;
     const last=t.due&&t.due>=t0?t.due:addDays(t0,1),days=[];
     for(let d=t0;d<=last&&days.length<14;d=addDays(d,1))days.push(d);
     const used=new Set();let guard=0;
@@ -508,7 +548,7 @@ function generatePlan(){
         const load=loadH(d)+pl.reduce((a,x)=>a+(x[1]-x[0])/60,0);
         if(load+chunk/60>p.cap)continue;
         for(const [a,b] of freeIntervals(d,pl)){
-          for(let s=Math.ceil(a/30)*30;s+chunk<=b;s+=30){
+          for(let s=Math.ceil(a/15)*15;s+chunk<=b;s+=15){
             if(d===t0&&s<nowM()+15)continue;
             const ov=overlap(s,s+chunk,pk[0],pk[1])/chunk;
             let sc=(t.prio>=3?42:22)*ov+14-Math.min(14,between(t0,d)*2.2)-load*1.6-(used.has(d)?16:0)-(s>=1260?10:0)-(s<510?4:0);
@@ -527,7 +567,10 @@ function generatePlan(){
     if(remain>=30)unplaced.push({title:t.title,left:remain,due:t.due});
   }
   res.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:mins(a.start)-mins(b.start));
-  S.sugs=res;S.unplaced=unplaced;save();
+  S.sugs=res;S.unplaced=unplaced;
+  const tm=res.filter(x=>x.date===t0).reduce((a,x)=>a+mins(x.end)-mins(x.start),0);
+  S.planNote=pre.res.length?`Today: ${pre.res.length} session${pre.res.length>1?'s':''}, ${hrs(tm/60)} of work between ${hm(pre.from)} and ${hm(pre.to)}${pre.capped?`, stopped at your ${p.cap}h daily limit. Lunch and dinner stay free`:'. Lunch and dinner stay free'}.`:(S.tasks.some(x=>!x.done)?'Nothing fits in the rest of today, so the sessions start on the next free day.':'You have no open tasks. Add tasks with an estimate and Aura will fill your free time.');
+  save();
 }
 function acceptSug(id,over){
   const i=S.sugs.findIndex(s=>s.id===id);if(i<0)return false;
@@ -752,6 +795,7 @@ VIEWS.plan=()=>{
   +`<section class="card"><div class="row" style="gap:8px 10px">
      <span class="pill acc">Peak focus: ${p.peak}</span><span class="pill">Window ${p.availStart} to ${p.availEnd}</span><span class="pill">Max ${p.cap}h a day</span><span class="pill">${p.buffer} min breaks</span><span class="pill">${p.sessionLen} min sessions</span>
      <button class="btn sm ghost" data-act="nav" data-arg="profile">Change</button></div></section>`
+  +(S.planNote&&S.sugs.length?`<p class="sm muted" style="margin:8px 2px">${esc(S.planNote)}</p>`:'')
   +(S.unplaced.length?`<div class="banner"><span>${ico('warn',20)}</span><div><b>Not everything fits.</b> ${S.unplaced.map(u=>`${esc(u.title)} still needs ${dur(u.left)}${u.due?` before ${fd(u.due)}`:''}`).join('; ')}. Move a deadline, raise your daily limit, or drop something.</div></div>`:'')
   +`<section class="card"><header><h2>Suggestions</h2>${S.sugs.length?`<span class="pill acc">${hrs(total/60)} across ${Object.keys(byDay).length} days</span>`:''}</header>`
   +(S.sugs.length?Object.keys(byDay).sort().map(d=>`<div class="daylbl">${rel(d)} · ${fd(d)}</div>`+byDay[d].map(s=>`<div class="sug"><div class="slot num">${s.start}<small>to ${s.end}</small></div><div style="min-width:0"><div class="tt">${esc(s.title)}</div><div class="sm muted">${esc(s.reason)}</div></div><div class="row acts"><button class="btn sm pri" data-act="sugAccept" data-arg="${s.id}">Accept</button><button class="btn sm" data-act="sugEdit" data-arg="${s.id}">Modify</button><button class="btn sm ghost" data-act="sugReject" data-arg="${s.id}">Reject</button></div>
@@ -2558,7 +2602,7 @@ const V_VIEWS=[['hacks',/\bhackathons?\b/i],['courses',/\bcourses?\b/i],['plan',
 const vT12=t=>{const [h,m]=t.split(':').map(Number),ap=h>=12?'pm':'am',h12=h%12||12;return m?`${h12}:${String(m).padStart(2,'0')} ${ap}`:`${h12} ${ap}`};
 const vDateSay=d=>{const t0=today();return d===t0?'today':d===addDays(t0,1)?'tomorrow':fd(d)};
 function vNorm(s){
-  s=String(s||'').replace(/\b([ap])\.\s?m\.?/gi,'$1m').replace(/(?<!\d)\.|\.(?!\d)/g,' ').replace(/[,!?;]/g,' ');
+  s=String(s||'').replace(/\b(?:tusk|tasc|tas k|tasks?k)\b/gi,'task').replace(/\b([ap])\.\s?m\.?/gi,'$1m').replace(/(?<!\d)\.|\.(?!\d)/g,' ').replace(/[,!?;]/g,' ');
   s=s.replace(new RegExp('\\b('+V_NW+')\\b(?=\\s*(?:am\\b|pm\\b|o\'?clock|hours?\\b|hrs?\\b|minutes?\\b|mins?\\b|days?\\b))','gi'),m=>V_NUM[m.toLowerCase()]);
   s=s.replace(new RegExp('\\b(at|by|from|to|till|until)\\s+('+V_NW+')\\b','gi'),(m,a,b)=>a+' '+V_NUM[b.toLowerCase()]);
   s=s.replace(/\bhalf an? hour\b/gi,'0.5 hours').replace(/\ban? hour\b/gi,'1 hour').replace(/\b(\d+)\s*o'?clock\b/gi,'$1');
@@ -2712,21 +2756,55 @@ function vExec(c){
    case 'ask':{vBanner('Asking Aura...');try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
   }
 }
-function vRun(raw){try{vExec(vParse(raw))}catch(e){vBanner('Sorry, that did not work. Try again.')}}
+function vRun(raw,alts){
+  try{
+    let best=null;const list=[raw].concat((alts||[]).filter(a=>a&&a!==raw));
+    /* the recogniser often hears a close sound-alike first; prefer the first hearing that is a real command */
+    for(const a of list){let c;try{c=vParse(a)}catch(e){continue}if(c.kind!=='ask'&&c.kind!=='empty'){best=c;break}}
+    vExec(best||vParse(raw));
+  }catch(e){vBanner('Sorry, that did not work. Try again.')}
+}
+const vLev=(a,b)=>{const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length]};
+const V_WAKE_A=new Set(['aura','ora','aurora','arora','laura','dora','aara','ara','eura','aurra','awra','orah','oora','aurah','aaura','aora','ahura','aurea','aaraa','ayra','orra','hora','lora']);
+/* finds "hey aura" in what was heard, tolerating sound-alikes, and returns what came after it */
+function vWakeFind(tx){
+  const w=String(tx||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim().split(' ');
+  for(let i=0;i<w.length-1;i++){
+    if(!/^(?:hey|hay|hi|ok|okay|hello|he|a|ay|hei|heya|hai)$/.test(w[i]))continue;
+    let n=1,x=w[i+1];
+    if(/^(?:or|are|our|aw|ah)$/.test(x)&&w[i+2]&&/^(?:a|ah|uh|ra)$/.test(w[i+2])){n=2;x='aura'}
+    if(V_WAKE_A.has(x)||vLev(x,'aura')<=1||vLev(x,'ora')<=1&&x.length>=3)return w.slice(i+1+n).join(' ');
+  }
+  return null;
+}
+const vChirp=()=>{try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}try{const c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.frequency.value=880;g.gain.value=.06;o.connect(g);g.connect(c.destination);o.start();setTimeout(()=>{o.stop();c.close()},110)}catch(e){}};
+const vHints=r=>{try{r.maxAlternatives=5}catch(e){}try{if(typeof SpeechRecognitionPhrase!=='undefined'){r.phrases=['Aura','Hey Aura','add task','schedule class','mark done','open tasks','smart plan','what is on today'].map((t,i)=>new SpeechRecognitionPhrase(t,i<2?6:3))}}catch(e){}};
+const vAlts=res=>{const a=[];for(let j=0;j<res.length;j++)if(res[j]&&res[j].transcript)a.push(res[j].transcript.trim());return a};
 /* ---- listening ---- */
 let VOREC=null,VOWAKE=null,VOARM=0;
 function vWakeStop(){const r=VOWAKE;VOWAKE=null;if(r){try{r.onend=null;r.onresult=null;r.onerror=null;r.abort()}catch(e){}}}
 function vWakeResume(){if(VC().wake&&!document.hidden&&!VOREC)setTimeout(vWakeStart,500)}
-function vWakeHeard(tx){
-  const m=/\b(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora|arora|laura|aara|ara|eura|aurra)\b[\s,.:]*(.*)$/i.exec(tx);
-  if(m){const cmd=m[1].trim();if(cmd.length>2){vRun(cmd);return}VOARM=Date.now()+8000;vBanner('Yes? Say a command.','',true);return}
-  if(Date.now()<VOARM){VOARM=0;vRun(tx)}
+let VOLOCK=0;
+function vWakeHeard(alts,final){
+  if(Date.now()<VOLOCK)return;
+  if(Date.now()<VOARM){if(final){VOARM=0;VOLOCK=Date.now()+2500;vRun(alts[0],alts.slice(1))}return}
+  let rest=null,k=-1;
+  for(let i=0;i<alts.length;i++){const r=vWakeFind(alts[i]);if(r!==null){rest=r;k=i;break}}
+  if(rest===null)return;
+  if(rest.length>2){
+    if(!final)return;
+    VOLOCK=Date.now()+2500;
+    const cmds=alts.map(vWakeFind).filter(x=>x!==null&&x.length>2);
+    vRun(cmds[0],cmds.slice(1));return;
+  }
+  /* just "Hey Aura": open a clean listening session instead of relying on the always-on stream */
+  VOLOCK=Date.now()+3000;vWakeStop();vChirp();vBanner('Yes? Say a command.','',true);setTimeout(()=>voiceTap(),450);
 }
 function vWakeStart(){
   if(!SR||!VC().wake||document.hidden||VOREC||VOWAKE)return;
   try{
-    const r=new SR();VOWAKE=r;r.lang='en-IN';r.continuous=true;r.interimResults=false;
-    r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)vWakeHeard(e.results[i][0].transcript.trim())};
+    const r=new SR();VOWAKE=r;r.lang='en-IN';r.continuous=true;r.interimResults=true;vHints(r);
+    r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)vWakeHeard(vAlts(e.results[i]),e.results[i].isFinal)};
     r.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){VC().wake=false;rawSave();VOWAKE=null;toast('The microphone is blocked, so Hey Aura is off. Allow it in your browser settings.');if(UI.view==='profile')render()}};
     r.onend=()=>{VOWAKE=null;if(VC().wake&&!document.hidden&&!VOREC)setTimeout(vWakeStart,700)};
     r.start();
@@ -2735,14 +2813,14 @@ function vWakeStart(){
 function voiceTap(){
   if(VOREC){try{VOREC.stop()}catch(e){}return}
   if(!SR){toast('Voice input is not supported in this browser. Use Chrome on Android.');return}
-  vWakeStop();let fin='',err='';
+  vWakeStop();let fin='',err='',alts=[],nf=0;
   try{
-    const r=new SR();VOREC=r;r.lang='en-IN';r.interimResults=true;r.continuous=false;
+    const r=new SR();VOREC=r;r.lang='en-IN';r.interimResults=true;r.continuous=false;vHints(r);
     r.onstart=()=>{vBanner('Listening...','',true);const f=$('#vfab');if(f)f.classList.add('on')};
-    r.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)fin+=x[0].transcript+' ';else it+=x[0].transcript}vBanner(fin||it||'Listening...','',true)};
+    r.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal){fin+=x[0].transcript+' ';nf++;alts=nf>1?[]:vAlts(x)}else it+=x[0].transcript}vBanner(fin||it||'Listening...','',true)};
     r.onerror=e=>{err=e.error||'error'};
     r.onend=()=>{VOREC=null;const f=$('#vfab');if(f)f.classList.remove('on');
-      if(fin.trim())vRun(fin.trim());
+      if(fin.trim()){const cl=t=>t.replace(/^\s*(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b[\s,.:]*/i,'');vRun(fin.trim(),alts.map(cl).filter(Boolean))}
       else if(err==='not-allowed'||err==='service-not-allowed')vBanner('The microphone is blocked. Allow it for this site in your browser settings.');
       else if(err==='network')vBanner('Voice needs an internet connection.');
       else vBanner('I did not catch that. Tap the mic and try again.');
