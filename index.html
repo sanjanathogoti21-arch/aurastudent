@@ -2726,5 +2726,5 @@ render();
 setInterval(()=>{if(UI.view==='today'&&!$('#modal').innerHTML&&!document.activeElement.closest('form'))render()},60000);
 setTimeout(checkReminders,1500);setInterval(checkReminders,30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkReminders()});
 </script>
-<script>if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
+<script>if('serviceWorker' in navigator){const had=!!navigator.serviceWorker.controller;let rl=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!had||rl)return;rl=true;const m=document.querySelector('#modal');if(m&&m.innerHTML.trim()){addEventListener('pagehide',()=>{});setTimeout(()=>location.reload(),20000)}else location.reload()});addEventListener('load',()=>navigator.serviceWorker.register('sw.js').then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update()})}).catch(()=>{}))}</script>
 </body></html>
