@@ -604,6 +604,13 @@ function score(al){
   const h=S.habits.filter(x=>x.log[today()]).length;
   return Math.max(8,Math.min(100,100-c*10-l*8-r*9+Math.min(6,h*2)));
 }
+/* true once there is anything to judge: an event in the next 7 days or this week, or an open task */
+function weekHasData(){
+  const t0=today(),m=monday(t0);
+  if(S.tasks.some(x=>!x.done))return true;
+  for(let i=0;i<7;i++){if(occ(addDays(t0,i)).some(e=>e.type!=='rest'))return true;if(occ(addDays(m,i)).some(e=>e.type!=='rest'))return true}
+  return false;
+}
 function nextUp(){
   const t0=today();
   for(let i=0;i<14;i++){const d=addDays(t0,i);for(const e of occ(d)){if(e.type==='rest')continue;if(i===0&&mins(e.end)<=nowM())continue;return e}}
@@ -660,10 +667,10 @@ const VIEWS={};
 function head(h,p,right=''){return `<div class="ph"><div><h1>${h}</h1>${p?`<p>${p}</p>`:''}</div><div class="row">${right}</div></div>`}
 
 VIEWS.today=()=>{
-  const t0=today(),p=S.profile,h=new Date().getHours(),al=alerts(),sc=score(al),nx=nextUp();
+  const t0=today(),p=S.profile,h=new Date().getHours(),al=alerts(),has=weekHasData(),sc=has?score(al):0,nx=nextUp();
   const greet=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
-  const status=al.length?`${al.length} ${al.length===1?'thing needs':'things need'} your attention. Start with the first one below.`:'Your week is clear and balanced. Keep going.';
-  const C=2*Math.PI*66,ringCol=sc>=75?'var(--r-ok)':sc>=50?'var(--r-mid)':'var(--r-bad)';
+  const status=!has?'Add your week to see its balance.':al.length?`${al.length} ${al.length===1?'thing needs':'things need'} your attention. Start with the first one below.`:'Your week is clear and balanced. Keep going.';
+  const C=2*Math.PI*66,ringCol=!has?'rgba(255,255,255,.14)':sc>=75?'var(--r-ok)':sc>=50?'var(--r-mid)':'var(--r-bad)';
   const long=pd(t0).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
   // timeline
   const rows=[];
@@ -690,9 +697,9 @@ VIEWS.today=()=>{
         <button class="btn" data-act="openAdd" data-arg="${t0}">${ico('plus',18)}Add event</button>
       </div>
     </div>
-    <div class="ring" role="img" aria-label="Week health ${sc} out of 100">
+    <div class="ring" role="img" aria-label="${has?`Week health ${sc} out of 100`:'Week health: add your week to see its balance'}">
       <svg viewBox="0 0 168 168"><circle cx="84" cy="84" r="66" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="12"/><circle cx="84" cy="84" r="66" fill="none" stroke="${ringCol}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C*sc/100} ${C}"/></svg>
-      <div><b class="num">${sc}</b><span>Week health</span></div>
+      <div><b class="num">${has?sc:'–'}</b><span>${has?'Week health':'Add your week'}</span></div>
     </div>
   </section>
   <div class="grid2">
@@ -701,7 +708,7 @@ VIEWS.today=()=>{
     </section>
     <div style="display:flex;flex-direction:column;gap:20px;min-width:0">
       <section class="card"><header><h2>Needs attention</h2>${al.length?`<span class="pill bad">${al.length}</span>`:''}</header>
-        ${al.length?al.slice(0,5).map(a=>`<div class="alert ${a.tone}"><div class="ai">${ico('warn',18)}</div><div style="flex:1;min-width:0"><div class="t">${esc(a.title)}</div><div class="sm muted">${esc(a.detail)}</div></div><button class="btn sm" data-act="${a.act}" data-arg="${a.arg}">${a.label}</button></div>`).join(''):`<div class="empty"><b>All clear</b>No clashes, overloaded days or at-risk deadlines.</div>`}
+        ${al.length?al.slice(0,5).map(a=>`<div class="alert ${a.tone}"><div class="ai">${ico('warn',18)}</div><div style="flex:1;min-width:0"><div class="t">${esc(a.title)}</div><div class="sm muted">${esc(a.detail)}</div></div><button class="btn sm" data-act="${a.act}" data-arg="${a.arg}">${a.label}</button></div>`).join(''):has?`<div class="empty"><b>All clear</b>No clashes, overloaded days or at-risk deadlines.</div>`:`<div class="empty"><b>Nothing to check yet</b>Add your classes and tasks, and Aura will look for clashes and risks.</div>`}
       </section>
       <section class="card"><header><h2>Coming up</h2><button class="btn sm ghost" data-act="nav" data-arg="tasks">All tasks</button></header>
         ${dls.slice(0,6).map(x=>`<div class="dl"><div style="min-width:0"><div class="tt" style="font-weight:600">${esc(x.title)}</div><div class="sm muted">${x.sub}</div></div><div style="text-align:right;flex:none"><div class="sm" style="font-weight:650">${rel(x.d)}</div>${x.risk?'<span class="pill warn">At risk</span>':`<span class="sm faint">${fd(x.d)}</span>`}</div></div>`).join('')||'<div class="empty">No deadlines ahead.</div>'}
