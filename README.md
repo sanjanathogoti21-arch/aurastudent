@@ -5,7 +5,7 @@ A personal student planner I built as a first-year B.Tech student at NIAT. It pu
 **Try it:** https://sanjanathogoti21-arch.github.io/aurastudent/  (opens empty, you fill in your own details)
 
 ## What it does
-- Voice input: tap the mic, say one sentence ("add task physics lab report due Friday at 5 pm"), confirm, done. Speech is turned into text on the AuraStudent server (Whisper), is not stored, and falls back to the browser's own recognition.
+- Voice input: tap the mic and just talk, in English, Hindi, Telugu or a mix ("I have a hackathon tomorrow at 4"). AI on the AuraStudent server (Cloudflare Workers AI: Whisper for speech, Llama to understand it) turns it into a task or event, picks a free slot if you give no time, and asks you to confirm. Nothing is stored. Falls back to simple commands if the AI is unavailable.
 - Calendar and tasks with clash detection and a smart study plan
 - Hackathon, community and course tracking, with dates marked "confirmed" or "needs verification"
 - Reminders before classes and deadlines, including a due time on tasks

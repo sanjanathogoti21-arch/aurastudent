@@ -71,7 +71,7 @@ async function handle(request, env) {
   if (limited(ip, 'all', 240, 60000)) return json(env, { error: 'Too many requests. Wait a minute and try again.' }, 429);
   const isSync = url.pathname.startsWith('/sync/');
   const raw = await request.text();
-  if (raw.length > (isSync ? LIMITS.doc * 1.5 : url.pathname === '/stt' ? 900000 : 400000)) return json(env, { error: 'Too large.' }, 413);
+  if (raw.length > (isSync ? LIMITS.doc * 1.5 : (url.pathname === '/stt' ? 900000 : 400000))) return json(env, { error: 'Too large.' }, 413);
   let b; try { b = JSON.parse(raw); } catch { return json(env, { error: 'Bad JSON.' }, 400); }
   if (!b || typeof b !== 'object') return json(env, { error: 'Bad request.' }, 400);
   if (url.pathname === '/stt') {
@@ -80,9 +80,68 @@ async function handle(request, env) {
     const a = str(b.audio, 880000);
     if (a.length < 2000 || !/^[A-Za-z0-9+/=]+$/.test(a)) return json(env, { error: 'No audio received.' }, 400);
     try {
-      const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: a, language: 'en', initial_prompt: 'Aura. Add task, schedule class, mark done, open tasks, what is on today, smart plan, tomorrow at 5 pm, physics lab, assignment.' });
+      const LANGS = ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'bn', 'gu', 'pa', 'ur'];
+      const lang = LANGS.includes(b.lang) ? b.lang : '';
+      const opts = { audio: a };
+      if (lang) opts.language = lang;
+      if (lang === 'en') opts.initial_prompt = 'Aura. Add task, schedule class, mark done, open tasks, what is on today, smart plan, tomorrow at 5 pm, physics lab, assignment, hackathon.';
+      const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', opts);
       return json(env, { text: String((r && r.text) || '').trim().slice(0, 500) });
     } catch (e) { return json(env, { error: 'The speech service failed. Try again.' }, 502); }
+  }
+  if (url.pathname === '/nlu') {
+    if (!env.AI) return json(env, { error: 'Understanding is not set up on the server yet.' }, 501);
+    if (limited(ip, 'nlu', 30, 60000) || limited(ip, 'nluday', 500, 86400e3)) return json(env, { error: 'Too many requests. Wait a minute and try again.' }, 429);
+    const text = str(b.text, 600).trim();
+    if (text.length < 2) return json(env, { error: 'No text.' }, 400);
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(b.today) ? b.today : '';
+    const nowT = /^\d{2}:\d{2}$/.test(b.now) ? b.now : '';
+    const wd = str(b.weekday, 12).replace(/[^A-Za-z]/g, '');
+    if (!today) return json(env, { error: 'Missing date.' }, 400);
+    const sys = `You turn ONE spoken sentence from a college student in India into ONE JSON object for a planner app. The student may speak English, Hindi, Telugu, Tamil, Kannada, Marathi, Bengali, or a mix (Hinglish). Understand loose, natural speech; they do not use fixed commands.
+Today is ${wd} ${today}. The local time now is ${nowT || 'unknown'} (India). Resolve every relative date ("tomorrow", "Friday", "next week", "repu", "kal", "parso") to YYYY-MM-DD. Times are 24-hour HH:MM ("4 pm" = "16:00"; for an unclear am/pm pick the sensible daytime one).
+Return ONLY JSON with these keys:
+{"intent":"add_task|add_event|mark_done|summary|open_view|clarify|none",
+ "title":"short English title, max 60 chars, no date or time words",
+ "date":"YYYY-MM-DD or empty", "time":"HH:MM start or empty", "end":"HH:MM or empty",
+ "duration_min":number or 0, "type":"class|exam|study|hackathon|personal",
+ "priority":1|2|3, "hours":estimated hours of work for a task or 0,
+ "query":"for mark_done: the task name", "view":"for open_view: tasks|calendar|plan|courses|hacks|insights|profile|assistant",
+ "question":"for clarify: ONE short question"}
+Rules:
+- A thing that happens at a clock time (class, meeting, hackathon round, exam, call, interview, study session at 4 pm) is add_event with time.
+- Something to do, submit, finish, join, apply, revise, or prepare, with or without a deadline, is add_task. Put the deadline in date (and time if said).
+- If an event has no time, leave time empty. The app will pick a free slot.
+- "I finished X", "X is done" is mark_done. "What is on today", "do I have anything tomorrow" is summary with date.
+- If you truly cannot tell what they want, use clarify with one short question. If it is not about planning, use none.
+- Never invent details the student did not say. Keep proper names as spoken.
+JSON only, no commentary.`;
+    const models = ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-3.1-8b-instruct'];
+    const VIEWS_OK = ['tasks', 'calendar', 'plan', 'courses', 'hacks', 'insights', 'profile', 'assistant'];
+    for (const m of models) {
+      try {
+        const r = await env.AI.run(m, { messages: [{ role: 'system', content: sys }, { role: 'user', content: text }], max_tokens: 300, temperature: 0 });
+        let o = r && r.response;
+        if (typeof o === 'string') { const mm = o.match(/\{[\s\S]*\}/); o = mm ? JSON.parse(mm[0]) : null; }
+        if (!o || typeof o !== 'object') continue;
+        const cmd = {
+          intent: ['add_task', 'add_event', 'mark_done', 'summary', 'open_view', 'clarify', 'none'].includes(o.intent) ? o.intent : 'none',
+          title: String(o.title || '').replace(/[<>]/g, '').trim().slice(0, 80),
+          date: /^\d{4}-\d{2}-\d{2}$/.test(o.date) ? o.date : '',
+          time: /^([01]\d|2[0-3]):[0-5]\d$/.test(o.time) ? o.time : '',
+          end: /^([01]\d|2[0-3]):[0-5]\d$/.test(o.end) ? o.end : '',
+          duration_min: Math.max(0, Math.min(720, Math.round(+o.duration_min || 0))),
+          type: ['class', 'exam', 'study', 'hackathon', 'personal'].includes(o.type) ? o.type : 'personal',
+          priority: [1, 2, 3].includes(+o.priority) ? +o.priority : 2,
+          hours: Math.max(0, Math.min(40, +o.hours || 0)),
+          query: String(o.query || '').replace(/[<>]/g, '').trim().slice(0, 80),
+          view: VIEWS_OK.includes(o.view) ? o.view : '',
+          question: String(o.question || '').replace(/[<>]/g, '').trim().slice(0, 140),
+        };
+        return json(env, { cmd });
+      } catch (e) { /* try the next model */ }
+    }
+    return json(env, { error: 'The understanding service failed. Try again.' }, 502);
   }
   await ensure(env);
 
