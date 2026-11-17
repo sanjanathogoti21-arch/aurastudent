@@ -2967,7 +2967,7 @@ function vWakeStart(){
   }catch(e){VOWAKE=null}
 }
 /* ---- cloud speech-to-text (Whisper on the AuraStudent server): works in Edge, Chrome and on phones ---- */
-let VONOCLOUD=false;
+let VONOCLOUD=false,VOWHY='';
 const vCanCloud=()=>!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder&&(window.AudioContext||window.webkitAudioContext)&&!/REPLACE_WITH/.test(PUSH_SERVER));
 async function vToWav(blob){
   const AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
@@ -3012,13 +3012,13 @@ async function vCloudTap(){
     const wav=await vToWav(new Blob(chunks,{type:rec.mimeType||mt}));
     const r=await fetch(pushBase()+'/stt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audio:u8ToStd(wav)})});
     let j={};try{j=await r.json()}catch(e){}
-    if(r.status===501||r.status===404){VONOCLOUD=true;vWakeResume();return false}
+    if(r.status===501||r.status===404){VONOCLOUD=true;VOWHY=r.status===404?'the server does not have the voice route yet. Paste the newest worker.js into Cloudflare and deploy.':'Workers AI is not switched on for the server. Add the AI binding in Cloudflare.';vWakeResume();return false}
     if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
     const text=String(j.text||'').trim();
     if(!text||/^[\s.,!?-]*$/.test(text)){vBanner('I did not catch that. Tap the mic and try again.');vWakeResume();return true}
     vBanner('"'+text+'"','',true);setTimeout(()=>{vRun(text)},350);
   }catch(e){
-    if(SR){VONOCLOUD=true;vWakeResume();return false}
+    if(SR){VONOCLOUD=true;VOWHY=(e&&e.message)||'the speech service failed.';vWakeResume();return false}
     vBanner(/fetch|network|Load failed/i.test(e.message||'')?'Could not reach the AuraStudent server. Check your connection.':(e.message||'Voice failed. Try again.'));
   }
   vWakeResume();return true;
@@ -3039,7 +3039,7 @@ async function voiceTap(again){
   const mc=await vMicCheck();
   if(VOREC)return;
   if(await vCloudTap())return;
-  if(!SR){vBanner('Voice is not available in this browser right now.');return}
+  if(!SR){vBanner('Voice is not available in this browser right now.'+(VOWHY?' Cloud voice problem: '+VOWHY:''));return}
   if(mc==='blocked'){vBanner('The microphone is blocked for this app. Click the lock or microphone icon in the address bar or app menu and allow it, then try again.');vWakeResume();return}
   if(mc==='nomic'){vBanner('No microphone was found. Plug one in or check Windows sound settings.');vWakeResume();return}
   if(mc==='busy'){vBanner('The microphone is being used by another app. Close it and try again.');vWakeResume();return}
@@ -3057,7 +3057,7 @@ async function voiceTap(again){
       else if(err==='language-not-supported')vBanner('Your browser does not support this voice language.');
       else if(err==='no-speech')vBanner('I heard nothing. Tap the mic, wait for Listening, then speak.');
       else if(err==='aborted')vBanner('Listening was interrupted. Tap the mic and try again.');
-      else if(!started)vBanner('This browser could not start voice recognition (no error given). Voice works best in Google Chrome. In Microsoft Edge or an installed window it may be unavailable. You can still type to Aura.');
+      else if(!started)vBanner('This browser could not start voice recognition (no error given). Voice works best in Google Chrome. In Microsoft Edge or an installed window it may be unavailable. You can still type to Aura.'+(VOWHY?' Cloud voice problem: '+VOWHY:''));
       else if(!heard)vBanner('The microphone started but heard no sound. Check the right microphone is selected in Windows sound settings, then speak louder or closer.');
       else vBanner('I did not catch that. Tap the mic and try again.');
       vWakeResume()};
