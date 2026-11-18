@@ -2908,11 +2908,11 @@ function vExec(c){
    }
    case 'summary':return vSay(vDaySummary(c.date));
    case 'next':{const t0=today(),n=nowM(),e=occ(t0).filter(x=>x.type!=='rest'&&mins(x.start)>n).sort((a,b)=>mins(a.start)-mins(b.start))[0];return vSay(e?`Next is ${e.title} at ${vT12(e.start)}.`:'Nothing else on your calendar today.')}
-   case 'ask':{vBanner('Asking Aura...');try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
+   case 'ask':{vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task or event${VNW?' ('+VNW+')':''}, so I am asking Aura instead.`);try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
   }
 }
 /* ---- understanding natural sentences in any language (AI on the server), with the rule parser as fallback ---- */
-let VONLU=true;
+let VONLU=true,VNW='';
 function vAutoSlot(from,dur,onlyDate){
   const p=S.profile,b=+p.buffer||15,t0=today();
   for(let i=0;i<8;i++){
@@ -2932,10 +2932,11 @@ async function vNlu(text){
   try{
     const wd=new Date(today()+'T12:00:00').toLocaleDateString('en-US',{weekday:'long'});
     const r=await fetch(pushBase()+'/nlu',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:String(text).slice(0,600),today:today(),now:hm(nowM()),weekday:wd}),signal:ctl.signal});
-    if(r.status===404||r.status===501){VONLU=false;return null}
-    if(!r.ok)return null;
-    const j=await r.json();return j&&j.cmd||null;
-  }catch(e){return null}finally{clearTimeout(tm)}
+    VNW='';
+    if(r.status===404||r.status===501){VONLU=false;VNW=r.status===404?'the server has no understanding route: paste the newest worker.js and Deploy':'Workers AI is not switched on for the server';return null}
+    if(!r.ok){VNW='the AI service answered '+r.status;return null}
+    const j=await r.json();if(!(j&&j.cmd))VNW='the AI gave no answer';else if(j.cmd.intent==='none')VNW='the AI did not see a planning request in it';return j&&j.cmd||null;
+  }catch(e){VNW=e&&e.name==='AbortError'?'the AI took too long':'could not reach the AI service';return null}finally{clearTimeout(tm)}
 }
 function vNluMap(m){
   if(!m||!m.intent||m.intent==='none')return null;
