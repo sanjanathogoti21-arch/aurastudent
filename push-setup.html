@@ -121,14 +121,16 @@ async function handle(request, env) {
     const sys = `You turn ONE spoken sentence from a college student in India into ONE JSON object for a planner app. The student may speak English, Hindi, Telugu, Tamil, Kannada, Marathi, Bengali, or a mix (Hinglish). Understand loose, natural speech; they do not use fixed commands.
 Today is ${wd} ${today}. The local time now is ${nowT || 'unknown'} (India). Resolve every relative date ("tomorrow", "Friday", "next week", "repu", "kal", "parso") to YYYY-MM-DD. Times are 24-hour HH:MM ("4 pm" = "16:00"; for an unclear am/pm pick the sensible daytime one).
 Return ONLY JSON with these keys:
-{"intent":"add_task|add_event|mark_done|summary|open_view|clarify|none",
+{"intent":"add_task|add_event|mark_done|update_task|delete_task|summary|open_view|clarify|none",
  "title":"short English title, max 60 chars, no date or time words",
  "date":"YYYY-MM-DD or empty", "time":"HH:MM start or empty", "end":"HH:MM or empty",
  "duration_min":number or 0, "type":"class|exam|study|hackathon|personal",
  "list":"task|event|hackathon|community|course", "milestone":"for hackathons: registration|team|submission|start",
  "priority":1|2|3, "hours":estimated hours of work for a task or 0,
  "query":"for mark_done: the task name", "view":"for open_view: tasks|calendar|plan|courses|hacks|insights|profile|assistant",
- "question":"for clarify: ONE short question"}
+ "question":"for clarify: ONE short question",
+ "new_date":"for update_task: the NEW date YYYY-MM-DD or empty", "new_time":"for update_task: NEW time HH:MM or empty", "new_title":"for update_task: the NEW wording of the task or empty",
+ "status":"for delete_task: done if they mean completed tasks, else empty"}
 Rules:
 - A thing that happens at a clock time (class, meeting, hackathon round, exam, call, interview, study session at 4 pm) is add_event with time.
 - Something to do, submit, finish, join, apply, revise, or prepare, with or without a deadline, is add_task. Put the deadline in date (and time if said).
@@ -137,6 +139,8 @@ Rules:
 - Learning something online or a course ("I want to do the React course", "enroll in Python on Coursera") has list=course, title is the course name, hours is hours per week if said.
 - Everything else is list=task or list=event.
 - If an event has no time, leave time empty. The app will pick a free slot.
+- Changing something that already exists ("move my hackathon task to Friday", "change my Python course task to finish the advanced module", "reschedule the lab report to 5 pm", "push it to tomorrow") is update_task: query is the existing task's words, new_date/new_time/new_title carry only what changes. "it"/"that" as the task means query is empty.
+- Removing something ("delete my completed hackathon task", "remove the physics quiz", "cancel it") is delete_task with query; status=done if they said completed or finished tasks.
 - "I finished X", "X is done" is mark_done. "What is on today", "do I have anything tomorrow" is summary with date.
 - If you truly cannot tell what they want, use clarify with one short question. If it is not about planning, use none.
 - Never invent details the student did not say. Keep proper names as spoken.
@@ -145,12 +149,12 @@ JSON only, no commentary.`;
     const VIEWS_OK = ['tasks', 'calendar', 'plan', 'courses', 'hacks', 'insights', 'profile', 'assistant'];
     for (const m of models) {
       try {
-        const r = await env.AI.run(m, { messages: [{ role: 'system', content: sys }, { role: 'user', content: text }], max_tokens: 300, temperature: 0 });
+        const r = await env.AI.run(m, { messages: [{ role: 'system', content: sys }, { role: 'user', content: text }], max_tokens: 380, temperature: 0 });
         let o = r &amp;&amp; r.response;
         if (typeof o === 'string') { const mm = o.match(/\{[\s\S]*\}/); o = mm ? JSON.parse(mm[0]) : null; }
         if (!o || typeof o !== 'object') continue;
         const cmd = {
-          intent: ['add_task', 'add_event', 'mark_done', 'summary', 'open_view', 'clarify', 'none'].includes(o.intent) ? o.intent : 'none',
+          intent: ['add_task', 'add_event', 'mark_done', 'update_task', 'delete_task', 'summary', 'open_view', 'clarify', 'none'].includes(o.intent) ? o.intent : 'none',
           title: String(o.title || '').replace(/[&lt;&gt;]/g, '').trim().slice(0, 80),
           date: /^\d{4}-\d{2}-\d{2}$/.test(o.date) ? o.date : '',
           time: /^([01]\d|2[0-3]):[0-5]\d$/.test(o.time) ? o.time : '',
@@ -163,6 +167,10 @@ JSON only, no commentary.`;
           hours: Math.max(0, Math.min(40, +o.hours || 0)),
           query: String(o.query || '').replace(/[&lt;&gt;]/g, '').trim().slice(0, 80),
           view: VIEWS_OK.includes(o.view) ? o.view : '',
+          new_date: /^\d{4}-\d{2}-\d{2}$/.test(o.new_date) ? o.new_date : '',
+          new_time: /^([01]\d|2[0-3]):[0-5]\d$/.test(o.new_time) ? o.new_time : '',
+          new_title: String(o.new_title || '').replace(/[&lt;&gt;]/g, '').trim().slice(0, 80),
+          status: o.status === 'done' ? 'done' : '',
           question: String(o.question || '').replace(/[&lt;&gt;]/g, '').trim().slice(0, 140),
         };
         return json(env, { cmd });

@@ -758,7 +758,7 @@ VIEWS.calendar=()=>{
 /* tasks */
 const PR={3:['High','bad','var(--bad)'],2:['Medium','warn','var(--gold)'],1:['Low','','var(--ink-3)']};
 VIEWS.tasks=()=>{
-  const tab=UI.taskTab,list=S.tasks.filter(t=>tab==='all'||(tab==='done'?t.done:!t.done)).sort((a,b)=>a.done-b.done||cmpTask(a,b));
+  const tab=UI.taskTab,list=S.tasks.filter(t=>(tab==='all'||(tab==='done'?t.done:!t.done))&&(!UI.taskCat||(t.cat||'general')===UI.taskCat)).sort((a,b)=>a.done-b.done||cmpTask(a,b));
   const groups={};S.tasks.forEach(t=>{if(t.group){(groups[t.group]=groups[t.group]||[]).push(t)}});
   const t0=today();
   return head('Tasks','Everything you owe, in order of when it is due. Big goals can be split into steps.',`<div class="seg"><button aria-pressed="${tab==='open'}" data-act="taskTab" data-arg="open">Open</button><button aria-pressed="${tab==='done'}" data-act="taskTab" data-arg="done">Done</button><button aria-pressed="${tab==='all'}" data-act="taskTab" data-arg="all">All</button></div>`)
@@ -769,6 +769,7 @@ VIEWS.tasks=()=>{
       <label class="f">Due time (optional)<input class="in" type="time" id="tk-dtime" name="dtime"></label>
       <label class="f">Hours needed<input class="in" type="number" id="tk-est" name="est" min=".5" step=".5" value="1.5"></label>
       <label class="f">Priority<select class="in" id="tk-prio" name="prio"><option value="3">High</option><option value="2" selected>Medium</option><option value="1">Low</option></select></label>
+      <label class="f">Category<select class="in" id="tk-cat" name="cat"><option value="auto">Auto-detect</option><option value="general">General tasks</option><option value="hackathon">Hackathons</option><option value="course">Courses</option><option value="community">Communities</option></select></label>
       <label class="f">Repeats<select class="in" id="tk-rec" name="rec"><option value="">Never</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
       <button class="btn pri" style="grid-column:1/-1">${ico('plus',18)}Add task</button></form></section>
    <section class="card"><header><h2>Break a big goal into steps</h2></header>
@@ -778,8 +779,8 @@ VIEWS.tasks=()=>{
       <label class="f">Finish by<input class="in" type="date" id="g-due" name="due" value="${addDays(t0,10)}"></label>
       <button class="btn pri" style="grid-column:1/-1">${ico('bolt',18)}Create steps</button></form></section></div>`
   +(Object.keys(groups).length?`<section class="card"><header><h2>Goals in progress</h2></header><div class="grid3">${Object.entries(groups).map(([g,ts])=>{const d=ts.filter(t=>t.done).length;return `<div class="gprog"><div class="row" style="justify-content:space-between"><b>${esc(g)}</b><span class="sm muted num">${d} of ${ts.length}</span></div><div class="meter"><i style="width:${d/ts.length*100}%"></i></div></div>`}).join('')}</div></section>`:'')
-  +`<section class="card"><header><h2>${tab==='done'?'Completed':tab==='all'?'All tasks':'To do'}</h2><span class="pill">${list.length}</span></header>`
-  +(list.length?list.map(t=>{const risk=atRisk(t),ov=t.due&&t.due<t0&&!t.done;return `<div class="task ${t.done?'done':''}"><button class="cb" role="checkbox" aria-checked="${t.done}" aria-label="Mark ${esc(t.title)} done" data-act="taskToggle" data-arg="${t.id}">${ico('check',16)}</button><div style="min-width:0"><div class="tt">${esc(t.title)}</div><div class="meta"><span>${esc(t.subject||'')}</span>${t.due?`<span class="num" style="${ov?'color:var(--bad);font-weight:700':''}">${rel(t.due)} · ${fd(t.due)}${t.dueTime?' · '+t.dueTime:''}</span>`:''}<span class="num">${hrs(t.est)}</span><span class="pill ${PR[t.prio][1]}">${PR[t.prio][0]}</span>${t.rec?`<span class="pill acc">${ico('repeat',12)}${t.rec}</span>`:''}${t.sched?`<span class="pill ok">${hrs(t.sched/60)} booked</span>`:''}${risk&&!t.done?'<span class="pill warn">At risk</span>':''}${!t.done&&t.due?`<button class="btn sm ghost" style="padding:2px 8px;min-height:0" data-act="taskTime" data-arg="${t.id}">${t.dueTime?'Change alert time':'Set alert time'}</button>`:''}</div></div><button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Delete task" data-act="taskDel" data-arg="${t.id}">${ico('trash',16)}</button></div>`}).join(''):`<div class="empty"><b>${tab==='done'?'Nothing finished yet':'You are all caught up'}</b>${tab==='done'?'Completed tasks show up here.':'Add a task above, or break a goal into steps.'}</div>`)
+  +(()=>{const x=tasksExtra();return x.chips+x.rem+x.arc})()+`<section class="card"><header><h2>${tab==='done'?'Completed':tab==='all'?'All tasks':'To do'}</h2><span class="pill">${list.length}</span></header>`
+  +(list.length?list.map(t=>{const risk=atRisk(t),ov=t.due&&t.due<t0&&!t.done;return `<div class="task ${t.done?'done':''}"><button class="cb" role="checkbox" aria-checked="${t.done}" aria-label="Mark ${esc(t.title)} done" data-act="taskToggle" data-arg="${t.id}">${ico('check',16)}</button><div style="min-width:0"><div class="tt">${esc(t.title)}</div><div class="meta"><span>${esc(t.subject||'')}</span>${catSel(t)}${t.due?`<span class="num" style="${ov?'color:var(--bad);font-weight:700':''}">${rel(t.due)} · ${fd(t.due)}${t.dueTime?' · '+t.dueTime:''}</span>`:''}<span class="num">${hrs(t.est)}</span><span class="pill ${PR[t.prio][1]}">${PR[t.prio][0]}</span>${t.rec?`<span class="pill acc">${ico('repeat',12)}${t.rec}</span>`:''}${t.sched?`<span class="pill ok">${hrs(t.sched/60)} booked</span>`:''}${risk&&!t.done?'<span class="pill warn">At risk</span>':''}${!t.done&&t.due?`<button class="btn sm ghost" style="padding:2px 8px;min-height:0" data-act="taskTime" data-arg="${t.id}">${t.dueTime?'Change alert time':'Set alert time'}</button>`:''}</div></div><button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Delete task" data-act="taskDel" data-arg="${t.id}">${ico('trash',16)}</button></div>`}).join(''):`<div class="empty"><b>${tab==='done'?'Nothing finished yet':'You are all caught up'}</b>${tab==='done'?'Completed tasks show up here.':'Add a task above, or break a goal into steps.'}</div>`)
   +`</section>`;
 };
 const TEMPL={
@@ -2794,6 +2795,7 @@ function vParse(raw){
   t=t.replace(/^(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b\s*/i,'').replace(/^(?:please|can you|could you|would you|will you|i want you to|i would like to|i'd like to|i want to)\s+/i,'').replace(/\s+please$/i,'').trim();
   if(!t)return {kind:'empty'};
   let m;
+  {const pm=/^(.+?)[,\s]+i\s+(?:need|have|got|must|should)\s+to\s+(.+)$/i.exec(t);if(pm){const d1=vDate(pm[1]);if(d1.date&&!vClean(d1.rest))t='i need to '+pm[2]+' '+pm[1]}}
   if(/^(?:help|what can (?:i|you) (?:say|do)|how do i use (?:this|voice))\b/i.test(t))return {kind:'help'};
   if(m=/^(?:log|add|record)\s+(?:a\s+|one\s+|1\s+)?lesson\b\s*(?:for|of|in|on)?\s*(.*)$/i.exec(t)||/^i\s+(?:finished|completed|did)\s+(?:a\s+|one\s+)?lesson\s*(?:for|of|in|on)?\s*(.*)$/i.exec(t))return {kind:'lesson',q:m[1].trim()};
   if(m=/^(?:add|create|join|start|new)\s+(?:a\s+|the\s+|my\s+)?(?:new\s+)?course\b[:\s]*(?:called\s+|named\s+|on\s+|for\s+)?(.*)$/i.exec(t)||/^i\s+(?:joined|started|enrolled in)\s+(?:the\s+|a\s+)?(.*?)(?:\s+course)?$/i.exec(t)){
@@ -2801,6 +2803,8 @@ function vParse(raw){
     const d=vDate(r);const name=vClean(d.rest);if(!name)return {kind:'say',say:'What is the course called? Say, add course followed by its name.'};
     return {kind:'course',name,end:d.date||'',weekly:wk};
   }
+  if(/^(?:complete|finish|submit)\s/i.test(t)){const d0=vDate(t);if(d0.date){const t0=vTime(d0.rest),ti=vClean(t0.rest);if(ti)return {kind:'task',title:ti[0].toUpperCase()+ti.slice(1),date:d0.date,time:t0.time,est:null,prio:2}}}
+  if(/\bi\s+(?:have|got)\s+(?:a|an|the|my)\s/i.test(t)){const d0=vDate(t);if(d0.date){const ti=vClean(d0.rest.replace(/^.*?\bi\s+(?:have|got)\s+(?:a|an|the|my)\s+/i,''));if(ti)return {kind:'task',title:ti[0].toUpperCase()+ti.slice(1),date:d0.date,time:vTime(d0.rest).time,est:null,prio:2}}}
   if(m=/^(?:mark|complete|finish|tick|check off|done with|i(?:'ve| have)?\s+(?:finished|completed|done))\s+(?:the\s+|my\s+)?(?:task\s+)?(.*?)(?:\s+(?:as\s+)?(?:done|complete|completed|finished))?$/i.exec(t)||/^(.+?)\s+(?:is|are)\s+(?:done|finished|complete|completed)$/i.exec(t))return {kind:'done',q:m[1].trim()};
   if(m=/^(?:what(?:'s| is)?|whats|tell me|read(?: out)?|do i have|how many|any)\b(.*)$/i.exec(t)){
     const r=m[1];if(/\b(next|upcoming)\b/i.test(r)&&!/\btomorrow\b/i.test(r))return {kind:'next'};
@@ -2826,9 +2830,10 @@ function vParse(raw){
     if(isTask){
       if(!title)return {kind:'say',say:'What is the task? Say, add task, then what it is and when it is due.'};
       let date=dd.date,time=tm.time;
-      if(!date){if(time){const now=new Date(),nm=now.getHours()*60+now.getMinutes();date=mins(time)>nm?today():addDays(today(),1)}else date=addDays(today(),1)}
+      if(!date){if(time){const now=new Date(),nm=now.getHours()*60+now.getMinutes();date=mins(time)>nm?today():addDays(today(),1)}else date=null}
       return {kind:'task',title,date,time,est:du.hours||null,prio};
     }
+    if((typeW==='hackathon'||vClassify(title+' '+typeW)!=='general')&&!/^(?:class|lecture|exam|test|lab)$/.test(typeW))return {kind:'task',title:title||(typeW?typeW[0].toUpperCase()+typeW.slice(1):'Task'),date:dd.date||null,time:tm.time||null,est:null,prio:2};
     if(!tm.time)return {kind:'say',say:'What time? Try again with a time, for example: schedule '+(title||typeW||'physics lab')+' tomorrow at 4 pm.'};
     const type=V_TYPES[typeW]||'personal';let date=dd.date;
     if(!date){const now=new Date(),nm=now.getHours()*60+now.getMinutes();date=mins(tm.time)>nm?today():addDays(today(),1)}
@@ -2846,7 +2851,7 @@ let vBannerT,VU=null;
 function vBanner(text,undo,live){
   let b=$('#vbanner');if(!b){b=document.createElement('div');b.id='vbanner';b.setAttribute('role','status');b.setAttribute('aria-live','polite');document.body.appendChild(b)}
   VU=undo||null;clearTimeout(vBannerT);
-  b.innerHTML=`<span class="vdot ${live?'live':''}"></span><span class="vtx">${esc(text)}</span>${undo?'<button class="vbt" data-act="voiceUndo">Undo</button>':''}<button class="vbt" data-act="voiceClose" aria-label="Close">${'×'}</button>`;
+  b.innerHTML=`<span class="vdot ${live?'live':''}"></span><span class="vtx">${esc(text)}</span>${live&&VOREC?'<span class="vlvl"><i></i></span>':''}${undo?'<button class="vbt" data-act="voiceUndo">Undo</button>':''}<button class="vbt" data-act="voiceClose" aria-label="Close">${'×'}</button>`;
   b.classList.add('on');if(!live)vBannerT=setTimeout(()=>b.classList.remove('on'),undo?8000:Math.max(6000,String(text).length*75));
 }
 function vSay(text,undo){vBanner(text,undo);if(VC().speak&&window.speechSynthesis){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text.slice(0,400));u.lang='en-IN';speechSynthesis.speak(u)}catch(e){}}}
@@ -2883,7 +2888,7 @@ function vCommit(c){
    }
    case 'event':{
      const e={id:'e'+uid(),title:c.title,type:c.type,date:c.date,start:c.start,end:c.end,by:'user'};S.events.push(e);save();render();setTimeout(autoTick,400);
-     return vSay(`Added ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}.`,()=>{S.events=S.events.filter(x=>x.id!==e.id);save();render();vBanner('Removed')});
+     return vSay(`Added ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}.${(()=>{const cl=overlapsOf(c.date,c.start,c.end).filter(x=>!String(x).includes(c.title));return cl.length?' Heads up: it overlaps '+cl[0]+'.':''})()}`,()=>{S.events=S.events.filter(x=>x.id!==e.id);save();render();vBanner('Removed')});
    }
    case 'hack':{
      const key=['registration','team','submission','start'].includes(c.milestone)?c.milestone:'start';
@@ -3099,22 +3104,23 @@ async function vCloudTap(){
   const data=new Float32Array(an.fftSize);let speech=false,lastLoud=Date.now(),t0=Date.now(),floor=0,cal=0,tm,stopped=false;
   const done=new Promise(res=>{rec.onstop=res});
   const stop=()=>{if(stopped)return;stopped=true;clearInterval(tm);try{rec.state!=='inactive'&&rec.stop()}catch(e){}};
-  VOREC={stop:()=>{if(Date.now()-t0<350)setTimeout(stop,350);else stop()}};const f=$('#vfab');if(f)f.classList.add('on');
+  VOREC={stop:()=>{setTimeout(stop,Date.now()-t0<350?350:250)}};const f=$('#vfab');if(f)f.classList.add('on');if(VREL){VREL=false;VOREC.stop()}
   rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
-  rec.start(250);if(hold)speech=true;vBanner(hold?'Listening... keep holding Ctrl+Alt, let go when you are done.':'Listening... speak now. Audio is processed to understand you, never stored.','',true);
+  rec.start(250);if(hold)speech=true;vBanner(hold?'Listening... keep holding Ctrl + Alt, let go when you are done.':'Listening... speak now. Audio is processed to understand you, never stored.','',true);
   tm=setInterval(()=>{
     an.getFloatTimeDomainData(data);let sum=0;for(const x of data)sum+=x*x;const rms=Math.sqrt(sum/data.length),now=Date.now();
     if(now-t0<400){floor=Math.max(floor,rms);cal++;return}
-    const thr=Math.max(.006,floor*2.2);
+    const thr=Math.max(.004,floor*1.8);{const lv=document.querySelector('#vbanner .vlvl i');if(lv)lv.style.width=Math.min(100,rms*900)+'%'}
     if(rms>thr){speech=true;lastLoud=now}else if(rms>thr*.7&&speech)lastLoud=now;
     if(hold){if(now-t0>30000)stop();return}
-    if(speech&&now-lastLoud>1500)stop();
+    if(speech&&now-lastLoud>2000)stop();
     else if(!speech&&now-t0>8000)stop();
     else if(now-t0>15000)stop();
   },80);
   await done;
   stream.getTracks().forEach(t=>t.stop());try{ac.close()}catch(e){}
   VOREC=null;if(f)f.classList.remove('on');
+  if(hold&&Date.now()-t0<800){vBanner('Hold Ctrl + Alt a little longer while you speak, then let go.');vWakeResume();return true}
   if((!speech&&!hold)||!chunks.length){vBanner('I heard nothing. Check the right microphone is selected, then tap the mic and speak right away.');vWakeResume();return true}
   vBanner('Understanding...','',true);
   try{
@@ -3143,7 +3149,7 @@ async function voiceTap(again){
   if(VOREC){try{VOREC.stop()}catch(e){}return}
   if(!SR&&!vCanCloud()){toast('Voice input is not supported in this browser. Use Chrome on Android.');return}
   if(VOWAKE&&!again){vWakeStop();vBanner('Starting the microphone...','',true);setTimeout(()=>voiceTap(true),450);return}
-  vWakeStop();let fin='',err='',alts=[],nf=0,lastI='',got=false,started=false,heard=false;
+  const holdSR=VOHOLD;vWakeStop();let fin='',err='',alts=[],nf=0,lastI='',got=false,started=false,heard=false;
   vBanner('Starting the microphone...','',true);
   const mc=await vMicCheck();
   if(VOREC)return;
@@ -3153,7 +3159,7 @@ async function voiceTap(again){
   if(mc==='nomic'){vBanner('No microphone was found. Plug one in or check Windows sound settings.');vWakeResume();return}
   if(mc==='busy'){vBanner('The microphone is being used by another app. Close it and try again.');vWakeResume();return}
   try{
-    const r=new SR();VOREC=r;r.lang=({auto:'en-IN',en:'en-IN',hi:'hi-IN',te:'te-IN',ta:'ta-IN',kn:'kn-IN',ml:'ml-IN',mr:'mr-IN',bn:'bn-IN',gu:'gu-IN',pa:'pa-IN',ur:'ur-IN'})[VC().lang]||'en-IN';r.interimResults=true;r.continuous=false;vHints(r);
+    const r=new SR();VOREC=r;r.lang=({auto:'en-IN',en:'en-IN',hi:'hi-IN',te:'te-IN',ta:'ta-IN',kn:'kn-IN',ml:'ml-IN',mr:'mr-IN',bn:'bn-IN',gu:'gu-IN',pa:'pa-IN',ur:'ur-IN'})[VC().lang]||'en-IN';r.interimResults=true;r.continuous=holdSR;vHints(r);
     r.onstart=()=>{started=true;vBanner('Listening...','',true);const f=$('#vfab');if(f)f.classList.add('on')};
     r.onspeechstart=()=>{heard=true};r.onresult=e=>{heard=true;let it='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal){fin+=x[0].transcript+' ';nf++;alts=nf>1?[]:vAlts(x)}else it+=x[0].transcript}if(it)lastI=it;got=true;vBanner(fin||it||'Listening...','',true)};
     r.onerror=e=>{err=e.error||'error'};
@@ -3211,15 +3217,29 @@ function voiceCard(){
 #vbanner{position:fixed;left:50%;width:max-content;top:calc(12px + env(safe-area-inset-top,0px));transform:translate(-50%,-20px);background:var(--ink);color:var(--bg);padding:10px 12px 10px 16px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:all .25s;z-index:70;max-width:calc(100vw - 24px);display:flex;align-items:center;gap:10px}
 #vbanner.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #vbanner .vtx{min-width:0;overflow-wrap:anywhere}#vbanner .vdot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}#vbanner .vdot.live{animation:vp 1.2s ease-in-out infinite}
+#vbanner .vlvl{width:46px;height:6px;border-radius:3px;background:color-mix(in srgb,var(--bg) 25%,transparent);overflow:hidden;flex:none}#vbanner .vlvl i{display:block;height:100%;width:0;background:var(--accent);transition:width .08s}
+.vhint{position:fixed;right:max(70px,calc(env(safe-area-inset-right,0px) + 70px));bottom:calc(168px + env(safe-area-inset-bottom,0px));font-size:12px;font-weight:600;color:var(--ink-2,var(--muted));background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px 9px;z-index:44;pointer-events:none;white-space:nowrap}
+@media (hover:none),(pointer:coarse),(max-width:860px){.vhint{display:none}}
+select.in.tcat{width:auto;max-width:150px;display:inline-block;flex:none;min-height:0;padding:2px 24px 2px 8px;font-size:12px;height:auto}
 #vbanner .vbt{background:transparent;border:1px solid color-mix(in srgb,var(--bg) 40%,transparent);color:var(--bg);border-radius:8px;padding:4px 10px;font:inherit;font-weight:700;cursor:pointer;min-height:32px;flex:none}`;document.head.appendChild(st);
-const vf=document.createElement('button');vf.className='vfab';vf.id='vfab';vf.setAttribute('data-act','voice');vf.setAttribute('aria-label','Talk to Aura');vf.innerHTML=ico('mic',20);document.body.appendChild(vf)}
+const vf=document.createElement('button');vf.className='vfab';vf.id='vfab';vf.setAttribute('data-act','voice');vf.setAttribute('aria-label','Talk to Aura');vf.innerHTML=ico('mic',20);vf.title='Hold Ctrl + Alt to speak';document.body.appendChild(vf);const vh=document.createElement('div');vh.className='vhint';vh.id='vhint';vh.textContent='Hold Ctrl + Alt to speak.';document.body.appendChild(vh)}
 /* the mic inside the Aura panel now uses the same voice commands */
 A.mic=()=>voiceTap();
-/* hold Ctrl+Alt to talk, let go to finish (laptops) */
+/* hold Ctrl+Alt to talk, let go to finish (laptops). Ignored while typing; one session at a time; either key ends it */
+let VREL=false;
 {let holding=false;
- document.addEventListener('keydown',e=>{if((e.key==='Control'||e.key==='Alt')&&e.ctrlKey&&e.altKey&&!e.repeat&&!holding&&!VOREC){holding=true;VOHOLD=true;e.preventDefault();voiceTap()}},true);
- document.addEventListener('keyup',e=>{if(holding&&(e.key==='Control'||e.key==='Alt')){holding=false;VOHOLD=false;if(VOREC){try{VOREC.stop()}catch(x){}}}},true);
- addEventListener('blur',()=>{if(holding){holding=false;VOHOLD=false;if(VOREC){try{VOREC.stop()}catch(x){}}}});
+ const typing=()=>{const a=document.activeElement;if(!a)return false;const n=a.tagName;return n==='INPUT'||n==='TEXTAREA'||n==='SELECT'||a.isContentEditable};
+ const release=()=>{if(!holding)return;holding=false;VOHOLD=false;if(VOREC){try{VOREC.stop()}catch(x){}}else VREL=true};
+ document.addEventListener('keydown',e=>{
+   if(holding){if(e.repeat||e.key==='Control'||e.key==='Alt'){e.preventDefault();return}release();return}
+   if(e.repeat)return;
+   if((e.key==='Control'||e.key==='Alt')&&e.ctrlKey&&e.altKey&&!e.shiftKey&&!e.metaKey){
+     if(typing()||VOREC||(document.getElementById('modal')&&document.getElementById('modal').innerHTML.trim()))return;
+     holding=true;VREL=false;VOHOLD=true;e.preventDefault();voiceTap()}
+ },true);
+ document.addEventListener('keyup',e=>{if(holding&&(e.key==='Control'||e.key==='Alt'||!e.ctrlKey||!e.altKey))release()},true);
+ addEventListener('blur',release);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)release()});
 }
 document.addEventListener('change',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.vlang){VC().lang=t.value;save();toast('Voice language saved')}});
 Object.assign(A,{
@@ -3228,6 +3248,230 @@ Object.assign(A,{
  voiceEdit:()=>{if(!VCF)return;const d=$('#vconfirm');d.innerHTML=`<label class="vch" for="vc-edit">Fix what I heard, then press Update</label><input class="in" id="vc-edit" value="${esc(VCF.raw)}" autocomplete="off" spellcheck="false"><div class="vcb"><button class="btn pri" data-act="voiceRedo">Update</button><button class="btn ghost" data-act="voiceCancel">Cancel</button></div>`;const i=$('#vc-edit');i.focus();i.select();i.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();A.voiceRedo()}})},
  voiceRedo:()=>{const i=$('#vc-edit'),t=i?i.value.trim():'';vConfirmClose();if(t)vRun(t)}
 });
+
+/* ===================== task service, categories, direct voice actions ===================== */
+const TCATS=[['general','General tasks'],['hackathon','Hackathons'],['course','Courses'],['community','Communities']];
+const CATL=Object.fromEntries(TCATS);
+function vClassify(t){t=String(t||'').toLowerCase();
+  if(/hackathon|hack ?fest|hackfest|devpost|smart india|\bhacks?\b|hack night|ideathon|codeathon/.test(t))return 'hackathon';
+  if(/\bcourses?\b|coursera|udemy|nptel|swayam|edx|bootcamp|certification|\bmodules?\b|\blessons?\b|learning path/.test(t))return 'course';
+  if(/communit|\bclubs?\b|chapter|\bgdg\b|meetup|\bsociety\b|\bfests?\b|membership/.test(t))return 'community';
+  return 'general'}
+const TS={
+  cap:s=>{s=String(s||'').trim();return s?s[0].toUpperCase()+s.slice(1):s},
+  norm:s=>String(s||'').toLowerCase().replace(/[^a-z0-9ऀ-෿ ]+/g,' ').replace(/\b(my|the|a|an|to|task)\b/g,' ').replace(/\s+/g,' ').trim(),
+  saveNow(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){return false}},
+  canWrite(){try{const k=KEY+'.probe';localStorage.setItem(k,'1');localStorage.removeItem(k);return true}catch(e){return false}},
+  arch(){return S.archive=S.archive||[]},
+  dupe(title,due){const n=TS.norm(title);return S.tasks.find(t=>!t.done&&TS.norm(t.title)===n&&(t.due||'')===(due||''))},
+  create(o){
+    const title=TS.cap(o.title);if(!title)return {fail:'empty'};
+    const cat=CATL[o.cat]?o.cat:vClassify(title);
+    const d=TS.dupe(title,o.due);if(d)return {dup:d};
+    const t={id:'t'+uid(),title,subject:'',due:o.due||null,est:o.est||1,prio:o.prio||2,done:false,sched:0,cat,src:o.src||'manual',created:Date.now()};
+    if(o.dueTime&&/^\d{2}:\d{2}$/.test(o.dueTime))t.dueTime=o.dueTime;
+    S.tasks.push(t);
+    if(!TS.saveNow()){S.tasks=S.tasks.filter(x=>x.id!==t.id);return {fail:'storage'}}
+    save();render();setTimeout(()=>{try{autoTick()}catch(e){}},400);VCTX={id:t.id,at:Date.now()};
+    return {task:t};
+  },
+  patch(t,p){const snap=JSON.stringify(t);for(const k in p){if(p[k]===null||p[k]==='')delete t[k];else t[k]=p[k]}
+    if(!TS.saveNow()){for(const k of Object.keys(t))delete t[k];Object.assign(t,JSON.parse(snap));return null}
+    save();render();VCTX={id:t.id,at:Date.now()};return snap},
+  restore(snap){const o=JSON.parse(snap),t=S.tasks.find(x=>x.id===o.id);if(!t)return;for(const k of Object.keys(t))delete t[k];Object.assign(t,o);save();render()},
+  remove(t){const a=TS.arch();a.unshift({...t,delAt:Date.now()});a.length=Math.min(a.length,40);
+    S.tasks=S.tasks.filter(x=>x.id!==t.id);
+    if(!TS.saveNow()){S.tasks.push(t);a.shift();return false}save();render();return true},
+  unremove(id){const a=TS.arch(),i=a.findIndex(x=>x.id===id);if(i<0)return false;const t=a.splice(i,1)[0];delete t.delAt;if(!S.tasks.some(x=>x.id===t.id))S.tasks.push(t);save();render();return true},
+  where(t){return `${CATL[t.cat||'general']}${t.due?', '+vDateSay(t.due)+(t.dueTime?' at '+vT12(t.dueTime):''):', no date yet'}`},
+  rem(t){return t.due&&S.notif&&S.notif.deadlines?(t.dueTime?' Reminder set for that time.':' Reminder set for 8 AM that day.'):''}
+};
+let VCTX=null,VPEND=null,VAGG=null;
+const vCtx=()=>VCTX&&Date.now()-VCTX.at<600000?S.tasks.find(t=>t.id===VCTX.id)||null:null;
+const VF_STOP=new Set(['task','tasks','reminder','reminders','my','the','a','an','one','that','this','it','please','item','todo','completed','complete','finished','done','old','all']);
+const VF_CATW={hackathon:'hackathon',hackathons:'hackathon',hack:'hackathon',hacks:'hackathon',course:'course',courses:'course',community:'community',communities:'community',club:'community',general:'general'};
+function vFind(q,wantDone){
+  q=String(q||'').toLowerCase().trim();
+  if(/^(it|that|this|that one|this one|the same|the task|)$/.test(q)){const c=vCtx();return c?{one:c}:{ctx:true}}
+  const toks=q.split(/[^a-z0-9ऀ-෿]+/).filter(Boolean),cats=new Set(toks.filter(x=>VF_CATW[x]).map(x=>VF_CATW[x])),rest=toks.filter(x=>!VF_STOP.has(x)&&!VF_CATW[x]);
+  const run=pool=>{
+    if(cats.size)pool=pool.filter(t=>cats.has(t.cat||'general')||[...cats].some(c=>String(t.title).toLowerCase().includes(c)));
+    if(!pool.length)return {none:true};
+    if(rest.length){const r=vMatch(rest.join(' '),pool,t=>t.title+' '+(CATL[t.cat||'general']||''));return r}
+    return pool.length===1?{one:pool[0]}:{many:pool.slice(0,4)};
+  };
+  const all=S.tasks;
+  if(wantDone===true)return run(all.filter(t=>t.done));
+  let r=run(all.filter(t=>!t.done));
+  if(r.none&&wantDone!==false)r=run(all.filter(t=>t.done));
+  return r;
+}
+function vEditParse(raw){
+  const t=vNorm(raw).replace(/^(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b\s*/i,'').replace(/^(?:please|can you|could you|would you|i want you to)\s+/i,'').replace(/\s+please$/i,'').replace(/[.!?]+$/,'').trim();
+  let m;const DONEW=/^(?:done|complete|completed|finished)$/i;
+  if(m=/^(?:move|reschedule|shift|postpone|push|delay)\s+(.+?)\s+(?:to|till|until|for|on|back to|forward to)\s+(.+)$/i.exec(t)){
+    const dd=vDate(m[2]),tm=vTime(dd.rest);if(dd.date||tm.time)return {act:'move',q:m[1],date:dd.date||'',time:tm.time||''};
+  }
+  if(m=/^(?:change|update|edit|rename|modify|set)\s+(.+?)\s+(?:to|as|into)\s+(.+)$/i.exec(t)){
+    const y=m[2].trim();if(DONEW.test(y))return {act:'done',q:m[1]};
+    const dd=vDate(y),tm=vTime(dd.rest),left=vClean(tm.rest);
+    if((dd.date||tm.time)&&left.split(/\s+/).filter(Boolean).length<=1)return {act:'move',q:m[1],date:dd.date||'',time:tm.time||''};
+    return {act:'rename',q:m[1],title:y};
+  }
+  if(m=/^(?:mark|set|tick|check off)\s+(.+?)\s+(?:as\s+)?(?:done|complete|completed|finished)$/i.exec(t)||/^(?:i(?:'ve| have)?\s+)?(?:finished|completed|done with)\s+(.+)$/i.exec(t)||/^(.+?)\s+(?:is|are|'s)\s+(?:done|finished|complete|completed)$/i.exec(t)||/^(?:mark|tick|check off)\s+(.+)$/i.exec(t))return {act:'done',q:m[1]};
+  if(m=/^(?:delete|remove|cancel|archive|clear)\s+(.+)$/i.exec(t))return {act:'delete',q:m[1],wantDone:/\b(?:completed|finished|done)\b/i.test(m[1])?true:undefined};
+  if(m=/^(?:complete|finish)\s+(.+)$/i.exec(t)){if(vDate(m[1]).date)return null;return {act:'done',q:m[1],soft:true}}
+  if(/^(?:and\s+)?(?:it'?s|its)\s+(?:done|finished|complete|completed)$/i.test(t))return {act:'done',q:'it'};
+  return null;
+}
+function vEdit(e){
+  if(!TS.canWrite()){vBanner("I couldn't change anything: this browser is blocking storage for the app.");return true}
+  const r=vFind(e.q,e.act==='delete'?e.wantDone:(e.act==='done'?false:undefined));
+  if(r.ctx){vSay(e.act==='done'||e.act==='delete'?'Which task do you mean?':'Which task should I change? Say its name.');return true}
+  if(r.none){if(e.soft)return false;vSay(`I couldn't find a task matching "${String(e.q).replace(/^(?:my|the)\s+/i,'')}".`);return true}
+  if(r.many){VPEND={e,ids:r.many.map(x=>x.id),at:Date.now()};vSay(`Which one? ${r.many.map(x=>x.title).join(', or ')}.`+(e.act==='delete'||e.act==='done'?' Or say "all".':''));return true}
+  vApply(e,[r.one]);return true;
+}
+function vResolvePend(txt){
+  const p=VPEND,c=S.tasks.filter(t=>p.ids.includes(t.id)),l=String(txt||'').toLowerCase().trim();if(!c.length)return false;
+  let pick=null;
+  if(/^(?:all|both|all of them|every one|everything)\b/.test(l)&&(p.e.act==='delete'||p.e.act==='done'))pick=c;
+  else{const ord=[/\b(?:first|1st|one)\b|^1$/,/\b(?:second|2nd|two)\b|^2$/,/\b(?:third|3rd|three)\b|^3$/,/\b(?:fourth|4th|four)\b|^4$/].findIndex(re=>re.test(l));
+    if(ord>=0&&c[ord])pick=[c[ord]];else{const r=vMatch(l,c,t=>t.title);if(r.one)pick=[r.one]}}
+  if(!pick)return false;VPEND=null;vApply(p.e,pick);return true;
+}
+function vApply(e,list){
+  const undos=[],msgs=[];
+  for(const t of list){
+    if(e.act==='done'){
+      if(t.done){msgs.push(`${t.title} is already completed.`);continue}
+      const snap=JSON.stringify(t),rec=!!t.rec;A.taskToggle({dataset:{arg:t.id}});
+      if(!TS.saveNow()){TS.restore(snap);msgs.push(`I couldn't save that, so ${t.title} is still open.`);continue}
+      VCTX={id:t.id,at:Date.now()};msgs.push(rec?`Done. Next ${t.title} is due ${vDateSay(t.due)}.`:`Marked ${t.title} completed.`);undos.push(()=>TS.restore(snap));
+    }else if(e.act==='move'){
+      const p={};if(e.date)p.due=e.date;if(e.time)p.dueTime=e.time;
+      if(!e.date&&e.time&&!t.due)p.due=mins(e.time)>nowM()?today():addDays(today(),1);
+      const snap=TS.patch(t,p);if(!snap){msgs.push(`I couldn't save the change to ${t.title}.`);continue}
+      msgs.push(`Moved ${t.title} to ${vDateSay(t.due)}${t.dueTime?' at '+vT12(t.dueTime):''}.${t.done?'':TS.rem(t).replace('Reminder set','Reminder updated')}`);undos.push(()=>TS.restore(snap));
+    }else if(e.act==='rename'){
+      const nt=TS.cap(e.title),snap=TS.patch(t,{title:nt});if(!snap){msgs.push(`I couldn't save the change to ${t.title}.`);continue}
+      msgs.push(`Updated the task to "${nt}" (${CATL[t.cat||'general']}).`);undos.push(()=>TS.restore(snap));
+    }else if(e.act==='delete'){
+      const copy={...t};if(!TS.remove(t)){msgs.push(`I couldn't delete ${t.title}: storage did not accept it.`);continue}
+      VCTX=null;msgs.push(`Deleted ${copy.title}. It is kept under Recently deleted.`);undos.push(()=>TS.unremove(copy.id));
+    }
+  }
+  vSay(msgs.join(' '),undos.length?()=>{undos.forEach(u=>u());vBanner('Undone')}:null);
+}
+function vDirect(c){
+  if(!TS.canWrite())return vBanner("I couldn't save that: this browser is blocking storage for the app. Nothing was added.");
+  if(c.kind==='task'||c.kind==='hack'||c.kind==='comev'){
+    const title=c.title||(c.kind==='hack'?'Hackathon':'');
+    const cat=c.cat||(c.kind==='hack'?'hackathon':c.kind==='comev'?'community':vClassify(title));
+    const r=TS.create({title,cat,due:c.date||null,dueTime:c.time||null,est:c.est,prio:c.prio,src:'voice'});
+    if(r.fail==='storage')return vBanner("I couldn't save that: storage is full or blocked. Nothing was added.");
+    if(r.fail)return vBanner('I did not get a task name. Say it again.');
+    if(r.dup)VCTX={id:r.dup.id,at:Date.now()};
+    if(r.dup&&c.time&&!r.dup.dueTime){const sn=TS.patch(r.dup,{dueTime:c.time});if(sn)return vSay(`${r.dup.title} was already in your tasks (${TS.where(r.dup)}), so I set its time to ${vT12(c.time)} and updated the reminder.`,()=>TS.restore(sn))}
+    if(r.dup)return vSay(`That is already in your tasks: ${r.dup.title} (${TS.where(r.dup)}). I did not add a duplicate.`);
+    const t=r.task;
+    return vSay(`Added ${t.title} under ${TS.where(t)}.${TS.rem(t)}${t.due?'':' Say a date and I will add it.'}`,()=>{const x=TS.arch();S.tasks=S.tasks.filter(y=>y.id!==t.id);save();render();vBanner('Removed')});
+  }
+  return vCommit(c);
+}
+const _vExec0=vExec;
+vExec=function(c){
+  if(!c)return;
+  if(c.kind==='tedit'){if(!vEdit(c.e))vSay('I could not find that task.');return}
+  if(['task','event','course','hack','comm','comev'].includes(c.kind)){
+    if(c.title)c.title=TS.cap(c.title);if(c.name)c.name=TS.cap(c.name);return vDirect(c);
+  }
+  return _vExec0(c);
+};
+const _vSay0=vSay;
+vSay=function(text,undo){if(VAGG){VAGG.push({text,undo});return}return _vSay0(text,undo)};
+const _vNluMap0=vNluMap;
+vNluMap=function(m){
+  if(!m||!m.intent)return null;
+  if(m.intent==='update_task')return {kind:'tedit',e:{act:(m.new_date||m.new_time)?'move':(m.new_title?'rename':'move'),q:m.query||'',date:m.new_date||'',time:m.new_time||'',title:m.new_title||''}};
+  if(m.intent==='delete_task')return {kind:'tedit',e:{act:'delete',q:m.query||'',wantDone:m.status==='done'?true:undefined}};
+  if(m.intent==='mark_done')return {kind:'tedit',e:{act:'done',q:m.query||m.title||'it'}};
+  if(m.intent==='add_task'||m.intent==='add_event'){
+    const L=m.list,title=String(m.title||'').trim();
+    const asTask=L==='hackathon'||((L==='course'||L==='community')&&(m.date||m.intent==='add_task'));
+    if(asTask)return {kind:'task',title:title||(L==='hackathon'?'Hackathon':''),cat:L,date:m.date||null,time:m.time||null,est:m.hours||null,prio:m.priority||2,ai:true};
+    if(m.intent==='add_task'){
+      if(!title)return {kind:'say',say:'What is the task?'};
+      return {kind:'task',title,date:m.date||null,time:m.time||null,est:m.hours||null,prio:m.priority||2,cat:vClassify(title),ai:true};
+    }
+  }
+  return _vNluMap0(m);
+};
+function vSplit(t){
+  const s=String(t||'').trim();
+  const re=/\s*(?:,\s*(?:and\s+|then\s+)?|;\s*|\s+and\s+(?:then\s+|also\s+)?|\s+then\s+|\.\s+)(?=(?:on|by|tomorrow|today|next|this|in|at|remind|schedule|add|i|then|complete|finish|submit|attend|my|the|we)\b)/i;
+  const p=s.split(re).map(x=>x.trim()).filter(Boolean);
+  return p.length>1&&p.every(x=>x.split(/\s+/).length>=3)?p:[s];
+}
+async function vOne(text){
+  const e=vEditParse(text);if(e&&!e.soft)return {kind:'tedit',e};
+  let c=null;if(VONLU&&!/REPLACE_WITH/.test(PUSH_SERVER))c=vNluMap(await vNlu(text));
+  if(!c){try{c=vParse(text)}catch(x){c=null}}
+  return c&&c.kind!=='ask'&&c.kind!=='empty'?c:null;
+}
+async function vMulti(parts){
+  vBanner('Understanding...','',true);
+  const cmds=[];for(const p of parts)cmds.push(await vOne(p));
+  VAGG=[];const bad=[];
+  try{cmds.forEach((c,i)=>{if(c)vExec(c);else bad.push(parts[i])})}finally{}
+  const got=VAGG;VAGG=null;
+  const text=got.map(g=>g.text).join(' ')+(bad.length?` I could not understand: "${bad.join('", "')}".`:'');
+  if(!got.length)return vBanner(text||'I did not catch that.');
+  const us=got.map(g=>g.undo).filter(Boolean);
+  _vSay0(text,us.length?()=>{us.forEach(u=>{try{u()}catch(e){}});vBanner('Undone')}:null);
+}
+const _vRun0=vRun;
+vRun=async function(raw,alts){
+  const first=String(raw||'').trim();
+  if(VPEND){if(Date.now()-VPEND.at<60000&&vResolvePend(first))return;VPEND=null}
+  const e=vEditParse(first);
+  if(e&&vEdit(e))return;
+  const parts=vSplit(first);
+  if(parts.length>1)return vMulti(parts);
+  return _vRun0(raw,alts);
+};
+/* ---- task list UI: category chip, filters, reminders, recently deleted ---- */
+const catSel=t=>`<select class="in tcat" data-tcat="${esc(t.id)}" aria-label="Category for ${esc(t.title)}">${TCATS.map(([k,l])=>`<option value="${k}" ${(t.cat||'general')===k?'selected':''}>${l}</option>`).join('')}</select>`;
+function catStrip(cat){
+  const L=S.tasks.filter(t=>t.cat===cat&&!t.done).sort(cmpTask),t0=today();
+  return `<section class="card" id="cat-${cat}"><header><h2>${CATL[cat]}: your tasks</h2><span class="pill">${L.length}</span></header>`+(L.length?L.map(t=>`<div class="task"><button class="cb" role="checkbox" aria-checked="false" aria-label="Mark ${esc(t.title)} done" data-act="taskToggle" data-arg="${esc(t.id)}">${ico('check',16)}</button><div style="min-width:0"><div class="tt">${esc(t.title)}</div><div class="meta">${t.due?`<span class="num" style="${t.due<t0?'color:var(--bad);font-weight:700':''}">${rel(t.due)} · ${fd(t.due)}${t.dueTime?' · '+t.dueTime:''}</span>`:'<span>No date yet</span>'}${catSel(t)}</div></div><button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Delete task" data-act="taskDel" data-arg="${esc(t.id)}">${ico('trash',16)}</button></div>`).join(''):`<div class="empty"><b>Nothing here yet</b>Say or type a task like "${cat==='hackathon'?'schedule hackathon tomorrow':cat==='course'?'complete my Python course on Friday':'community meeting on Friday'}" and it lands here and in your Tasks list.</div>`)+`</section>`;
+}
+for(const [v,c] of [['hacks','hackathon'],['courses','course'],['comms','community']]){const f=VIEWS[v];VIEWS[v]=()=>f()+catStrip(c)}
+function tasksExtra(){
+  const t0=today(),chips=`<div class="row" style="flex-wrap:wrap;gap:6px;margin:0 0 10px" role="group" aria-label="Filter by category"><button class="btn sm ${!UI.taskCat?'pri':''}" data-act="taskCat" data-arg="">All</button>${TCATS.map(([k,l])=>`<button class="btn sm ${UI.taskCat===k?'pri':''}" data-act="taskCat" data-arg="${k}">${l}</button>`).join('')}</div>`;
+  const up=S.tasks.filter(t=>!t.done&&t.due&&t.due>=t0).sort(cmpTask).slice(0,5);
+  const rem=S.notif&&S.notif.deadlines&&up.length?`<section class="card"><header><h2>Upcoming reminders</h2></header>${up.map(t=>`<div class="row" style="justify-content:space-between;gap:8px;padding:4px 0"><span style="min-width:0">${esc(t.title)} <span class="sm muted">${CATL[t.cat||'general']}</span></span><span class="sm num">${rel(t.due)}${t.dueTime?' · alert '+t.dueTime:' · alert 8:00'}</span></div>`).join('')}<p class="sm faint" style="margin-top:6px">Use "Change alert time" on a task to edit when it reminds you. Moving or finishing a task updates or cancels its reminder.</p></section>`:'';
+  const a=S.archive||[],arc=a.length?`<section class="card"><header><h2>Recently deleted</h2><span class="pill">${a.length}</span></header>${a.slice(0,5).map(t=>`<div class="row" style="justify-content:space-between;gap:8px;padding:4px 0"><span style="min-width:0">${esc(t.title)} <span class="sm muted">${CATL[t.cat||'general']}</span></span><button class="btn sm" data-act="taskRestore" data-arg="${esc(t.id)}">Restore</button></div>`).join('')}</section>`:'';
+  return {chips,rem,arc};
+}
+Object.assign(A,{
+  taskCat:el=>{UI.taskCat=el.dataset.arg||'';render()},
+  taskRestore:el=>{if(TS.unremove(el.dataset.arg))toast('Restored')},
+  taskDel:el=>{const t=S.tasks.find(x=>x.id===el.dataset.arg);if(!t)return;const copy={...t};if(!TS.remove(t)){toast('Could not delete: storage did not accept it');return}
+    toast('Deleted. Find it under Recently deleted.')}
+});
+document.addEventListener('change',e=>{const el=e.target;if(!el||!el.dataset)return;
+  if(el.dataset.tcat){const t=S.tasks.find(x=>x.id===el.dataset.tcat);if(t){const snap=TS.patch(t,{cat:el.value});toast(snap?`Moved to ${CATL[el.value]}`:'Could not save the change')}}
+  if(el.dataset.tdue){const t=S.tasks.find(x=>x.id===el.dataset.tdue);if(t&&/^\d{4}-\d{2}-\d{2}$/.test(el.value)){const snap=TS.patch(t,{due:el.value});toast(snap?`Moved to ${fd(el.value)}. Reminder updated.`:'Could not save the change')}}
+});
+{const _ta=F.taskAdd;F.taskAdd=(d,fm,e)=>{
+  const title=String(d.get('title')||'').trim(),due=d.get('due')||null;
+  if(title&&TS.dupe(title,due)){toast('That task already exists. I did not add a duplicate.');return}
+  const n0=S.tasks.length;_ta(d,fm,e);
+  if(S.tasks.length>n0){const t=S.tasks[S.tasks.length-1],sel=d.get('cat')||'auto';t.cat=CATL[sel]?sel:vClassify(t.title);t.src='manual';t.created=Date.now();
+    if(!TS.saveNow()){S.tasks.pop();render();toast("Could not save: storage is full or blocked");return}
+    save();render();toast(`Added to ${CATL[t.cat]}`)}
+}}
 
 try{const t=localStorage.getItem(TKEY);if(t)document.documentElement.dataset.theme=t;const v=localStorage.getItem('aurastudent.view');if(v&&VIEWS[v])UI.view=v}catch(e){}
 render();
