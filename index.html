@@ -2861,7 +2861,7 @@ function vDaySummary(date){
 let VLAST='',VCF=null;
 function vSumm(c){
   if(c.kind==='task')return `Add task: ${c.title}, due ${vDateSay(c.date)}${c.time?' at '+vT12(c.time):''}`;
-  if(c.kind==='event'){const cl=overlapsOf(c.date,c.start,c.end);return `Add ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}${c.auto?' (a free slot I picked for you)':''}${cl.length?'. Heads up: it overlaps '+cl[0]:''}`}
+  if(c.kind==='event'){const cl=overlapsOf(c.date,c.start,c.end);return `Add ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}${c.auto?' (a free slot I picked for you)':''}${c.fromNow?' (starting now, since you only said when it ends)':''}${cl.length?'. Heads up: it overlaps '+cl[0]:''}`}
   return `Add course ${c.name}, ${hrs(c.weekly||2)} a week`;
 }
 function vConfirmClose(){const e=$('#vconfirm');if(e)e.remove();VCF=null}
@@ -2959,6 +2959,13 @@ function vNluMap(m){
       if(start){
         if(!date)date=mins(start)>nowM()?t0:addDays(t0,1);
         let e=end?mins(end):mins(start)+dur;if(e<=mins(start))e=mins(start)+dur;e=Math.min(e,1439);end=hm(e);
+      }else if(end){
+        /* only an end time was said ("till 6 pm"): start now (or at the start of the day) and finish when they said */
+        const e=mins(end);if(!date)date=e>nowM()+10?t0:addDays(t0,1);
+        let st=date===t0?Math.max(mins(S.profile.availStart),Math.ceil((nowM()+5)/5)*5):mins(S.profile.availStart);
+        if(st>=e-14)st=Math.max(0,e-dur);
+        start=hm(st);auto=false;
+        return {kind:'event',title:(type==='study'&&!/^study/i.test(title)?'Study: '+title:title),type,date,start,end:hm(e),auto,ai:true,fromNow:date===t0};
       }else{
         const sl=vAutoSlot(date||t0,dur,!!date);
         if(!sl)return {kind:'task',title,date:date||addDays(t0,1),time:null,est:dur/60,prio:m.priority||2,ai:true};
