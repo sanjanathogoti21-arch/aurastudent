@@ -2862,6 +2862,9 @@ let VLAST='',VCF=null;
 function vSumm(c){
   if(c.kind==='task')return `Add task: ${c.title}, due ${vDateSay(c.date)}${c.time?' at '+vT12(c.time):''}`;
   if(c.kind==='event'){const cl=overlapsOf(c.date,c.start,c.end);return `Add ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}${c.auto?' (a free slot I picked for you)':''}${c.fromNow?' (starting now, since you only said when it ends)':''}${cl.length?'. Heads up: it overlaps '+cl[0]:''}`}
+  if(c.kind==='hack'){const L={registration:'registration',team:'team formation',submission:'submission',start:'event start'}[c.milestone]||'event start';return `Add to Hackathons: ${c.title}${c.date?`, ${L} on ${vDateSay(c.date)}${c.time?' at '+vT12(c.time):''}`:' (add the dates later)'}`}
+  if(c.kind==='comm')return `Add to Communities: ${c.name} (want to join)`;
+  if(c.kind==='comev')return `Add to Communities & Events: ${c.title}, ${vDateSay(c.date)}${c.time?' at '+vT12(c.time):''}`;
   return `Add course ${c.name}, ${hrs(c.weekly||2)} a week`;
 }
 function vConfirmClose(){const e=$('#vconfirm');if(e)e.remove();VCF=null}
@@ -2882,6 +2885,25 @@ function vCommit(c){
      const e={id:'e'+uid(),title:c.title,type:c.type,date:c.date,start:c.start,end:c.end,by:'user'};S.events.push(e);save();render();setTimeout(autoTick,400);
      return vSay(`Added ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}.`,()=>{S.events=S.events.filter(x=>x.id!==e.id);save();render();vBanner('Removed')});
    }
+   case 'hack':{
+     const key=['registration','team','submission','start'].includes(c.milestone)?c.milestone:'start';
+     const low=x=>String(x).toLowerCase().trim();
+     let h=S.hacks.find(x=>low(x.title)===low(c.title)||low(x.title).includes(low(c.title))||low(c.title).includes(low(x.title)));
+     const created=!h;let prev=null;
+     if(created){h={id:'h'+uid(),title:c.title,place:'',link:'',milestones:MSDEF.map(([k2,label,opt])=>({id:'m'+uid(),key:k2,label,optional:opt,enabled:true,date:null,time:'',dateStatus:'verify',link:'',note:'',done:false,remind:'1d'}))};S.hacks.push(h)}
+     const ms=h.milestones.find(x=>x.key===key);
+     if(ms&&c.date){prev={date:ms.date,time:ms.time,enabled:ms.enabled};ms.date=c.date;ms.time=c.time||'';ms.enabled=true;ms.dateStatus='verify'}
+     save();render();setTimeout(autoTick,400);
+     return vSay(`Added to Hackathons: ${h.title}${c.date?' ('+vDateSay(c.date)+')':''}. Open Hackathons to add the other dates.`,()=>{if(created)S.hacks=S.hacks.filter(x=>x.id!==h.id);else if(ms&&prev){ms.date=prev.date;ms.time=prev.time;ms.enabled=prev.enabled}save();render();vBanner('Removed')});
+   }
+   case 'comm':{
+     const k={id:'c'+uid(),remind:'1d',name:c.name,kind:'other',status:'wishlist',role:'',since:'',url:'',renewal:null,renewStatus:'verify',renewLink:'',renewNote:'',notes:''};S.comms.push(k);save();render();
+     return vSay(`Added ${c.name} to Communities as "want to join".`,()=>{S.comms=S.comms.filter(x=>x.id!==k.id);save();render();vBanner('Removed')});
+   }
+   case 'comev':{
+     const it={id:'i'+uid(),done:false,dismissed:false,nextDone:false,checklist:[],created:Date.now(),title:c.title,cat:'event',date:c.date,time:c.time||'',dateStatus:'verify',link:'',note:'',next:'',nextDue:null,remind:'1d',place:'',commId:'',rsvp:'',fest:false,dur:c.dur||undefined,details:''};S.items.push(it);save();render();setTimeout(autoTick,400);
+     return vSay(`Added to Communities & Events: ${c.title}, ${vDateSay(c.date)}.`,()=>{S.items=S.items.filter(x=>x.id!==it.id);save();render();vBanner('Removed')});
+   }
    case 'course':{
      const k={id:'c'+uid(),name:c.name,platform:'',weekly:c.weekly||2,total:0,done:0,end:c.end||'',link:'',note:''};CRS().push(k);save();render();
      return vSay(`Added course ${c.name}, ${hrs(k.weekly)} a week. Open My courses to add details.`,()=>{S.courses=CRS().filter(x=>x.id!==k.id);save();render();vBanner('Removed')});
@@ -2894,7 +2916,7 @@ function vExec(c){
    case 'say':return vSay(c.say);
    case 'help':return vSay('Try: open tasks. Add task physics lab tomorrow at 5 pm. Schedule class maths tomorrow from 9 to 10 am. Mark physics lab done. What is on today. Add course AI Skill Passport.');
    case 'nav':{go(c.view);const l=(NAV.find(n=>n[0]===c.view)||[])[1]||c.view;return vBanner('Opened '+l)}
-   case 'task':case 'event':case 'course':{const cap=x=>x?x[0].toUpperCase()+x.slice(1):x;if(c.title)c.title=cap(c.title);if(c.name)c.name=cap(c.name);return vConfirm(c,VLAST)}
+   case 'task':case 'event':case 'course':case 'hack':case 'comm':case 'comev':{const cap=x=>x?x[0].toUpperCase()+x.slice(1):x;if(c.title)c.title=cap(c.title);if(c.name)c.name=cap(c.name);return vConfirm(c,VLAST)}
    case 'lesson':{
      const L=CRS().filter(x=>!crsDone(x));if(!L.length)return vSay('You have no active courses yet.');
      const r=c.q?vMatch(c.q,L,x=>x.name):(L.length===1?{one:L[0]}:{many:L.slice(0,3)});
@@ -2912,7 +2934,7 @@ function vExec(c){
   }
 }
 /* ---- understanding natural sentences in any language (AI on the server), with the rule parser as fallback ---- */
-let VONLU=true,VNW='';
+let VONLU=true,VNW='',VOHOLD=false;
 function vAutoSlot(from,dur,onlyDate){
   const p=S.profile,b=+p.buffer||15,t0=today();
   for(let i=0;i<8;i++){
@@ -2946,6 +2968,15 @@ function vNluMap(m){
     case 'summary':return {kind:'summary',date:m.date||t0};
     case 'open_view':return m.view&&VIEWS[m.view]?{kind:'nav',view:m.view}:null;
     case 'mark_done':return (m.query||title)?{kind:'done',q:m.query||title}:null;
+    case 'add_task':case 'add_event':{
+      const L=m.list;
+      if(L==='hackathon')return {kind:'hack',title:title||'Hackathon',milestone:m.milestone||'start',date:m.date||'',time:m.time||'',ai:true};
+      if(L==='course')return title?{kind:'course',name:title,weekly:m.hours||2,ai:true}:{kind:'say',say:'What is the course called?'};
+      if(L==='community'){if(!title)return {kind:'say',say:'Which community or club?'};return (m.date||m.time)?{kind:'comev',title,date:m.date||addDays(t0,1),time:m.time||'',dur:m.duration_min||60,ai:true}:{kind:'comm',name:title,ai:true}}
+      break;
+    }
+  }
+  switch(m.intent){
     case 'add_task':{
       if(!title)return {kind:'say',say:'What is the task?'};
       let date=m.date,time=m.time;
@@ -3047,7 +3078,9 @@ async function vToWav(blob){
   const AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
   let buf;try{buf=await ac.decodeAudioData(await blob.arrayBuffer())}finally{try{ac.close()}catch(e){}}
   const n=Math.max(1,Math.ceil(buf.duration*16000)),oc=new OfflineAudioContext(1,n,16000),src=oc.createBufferSource();src.buffer=buf;src.connect(oc.destination);src.start();
-  const pcm=(await oc.startRendering()).getChannelData(0),out=new DataView(new ArrayBuffer(44+pcm.length*2)),w=(o,t)=>{for(let i=0;i<t.length;i++)out.setUint8(o+i,t.charCodeAt(i))};
+  const pcm=(await oc.startRendering()).getChannelData(0);
+  {let pk=0;for(let i=0;i<pcm.length;i++){const a=Math.abs(pcm[i]);if(a>pk)pk=a}if(pk>.0005&&pk<.7){const g=Math.min(12,.85/pk);for(let i=0;i<pcm.length;i++)pcm[i]*=g}}
+  const out=new DataView(new ArrayBuffer(44+pcm.length*2)),w=(o,t)=>{for(let i=0;i<t.length;i++)out.setUint8(o+i,t.charCodeAt(i))};
   w(0,'RIFF');out.setUint32(4,36+pcm.length*2,true);w(8,'WAVEfmt ');out.setUint32(16,16,true);out.setUint16(20,1,true);out.setUint16(22,1,true);out.setUint32(24,16000,true);out.setUint32(28,32000,true);out.setUint16(32,2,true);out.setUint16(34,16,true);w(36,'data');out.setUint32(40,pcm.length*2,true);
   for(let i=0;i<pcm.length;i++){const v=Math.max(-1,Math.min(1,pcm[i]));out.setInt16(44+i*2,v<0?v*32768:v*32767,true)}
   return new Uint8Array(out.buffer);
@@ -3055,8 +3088,9 @@ async function vToWav(blob){
 /* returns true when it handled the request, false to fall back to the browser's own recogniser */
 async function vCloudTap(){
   if(!vCanCloud()||VONOCLOUD)return false;
+  const hold=VOHOLD;VOHOLD=false;
   let stream;
-  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}})}
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}})}
   catch(e){const n=e&&e.name;vBanner(n==='NotAllowedError'||n==='SecurityError'?'The microphone is blocked for this app. Allow it in the address bar or site settings, then try again.':n==='NotReadableError'?'The microphone is being used by another app. Close it and try again.':'No microphone was found. Check your sound settings.');vWakeResume();return true}
   VOPERM=true;
   const mt=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'';
@@ -3065,22 +3099,23 @@ async function vCloudTap(){
   const data=new Float32Array(an.fftSize);let speech=false,lastLoud=Date.now(),t0=Date.now(),floor=0,cal=0,tm,stopped=false;
   const done=new Promise(res=>{rec.onstop=res});
   const stop=()=>{if(stopped)return;stopped=true;clearInterval(tm);try{rec.state!=='inactive'&&rec.stop()}catch(e){}};
-  VOREC={stop};const f=$('#vfab');if(f)f.classList.add('on');
+  VOREC={stop:()=>{if(Date.now()-t0<350)setTimeout(stop,350);else stop()}};const f=$('#vfab');if(f)f.classList.add('on');
   rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
-  rec.start(250);vBanner('Listening... speak now. Audio is processed to understand you, never stored.','',true);
+  rec.start(250);if(hold)speech=true;vBanner(hold?'Listening... keep holding Ctrl+Alt, let go when you are done.':'Listening... speak now. Audio is processed to understand you, never stored.','',true);
   tm=setInterval(()=>{
     an.getFloatTimeDomainData(data);let sum=0;for(const x of data)sum+=x*x;const rms=Math.sqrt(sum/data.length),now=Date.now();
     if(now-t0<400){floor=Math.max(floor,rms);cal++;return}
-    const thr=Math.max(.02,floor*2.5);
-    if(rms>thr){speech=true;lastLoud=now}
-    if(speech&&now-lastLoud>1300)stop();
-    else if(!speech&&now-t0>7000)stop();
-    else if(now-t0>14000)stop();
+    const thr=Math.max(.006,floor*2.2);
+    if(rms>thr){speech=true;lastLoud=now}else if(rms>thr*.7&&speech)lastLoud=now;
+    if(hold){if(now-t0>30000)stop();return}
+    if(speech&&now-lastLoud>1500)stop();
+    else if(!speech&&now-t0>8000)stop();
+    else if(now-t0>15000)stop();
   },80);
   await done;
   stream.getTracks().forEach(t=>t.stop());try{ac.close()}catch(e){}
   VOREC=null;if(f)f.classList.remove('on');
-  if(!speech||!chunks.length){vBanner('I heard nothing. Check the right microphone is selected, then tap the mic and speak right away.');vWakeResume();return true}
+  if((!speech&&!hold)||!chunks.length){vBanner('I heard nothing. Check the right microphone is selected, then tap the mic and speak right away.');vWakeResume();return true}
   vBanner('Understanding...','',true);
   try{
     const wav=await vToWav(new Blob(chunks,{type:rec.mimeType||mt}));
@@ -3160,6 +3195,7 @@ function voiceCard(){
     <p><b>Finish things:</b> "mark lab report done", "log a lesson for AI Skill Passport".</p>
     <p><b>Courses:</b> "add course data structures 3 hours a week".</p>
     <p><b>Ask:</b> "what is on today", "what is on tomorrow", "what is next".</p>
+    <p><b>On a laptop:</b> hold <b>Ctrl+Alt</b> to talk and let go when you are done.</p>
     <p><b>Just talk naturally, in any language:</b> "I have a hackathon tomorrow at 4", "need to submit the DBMS record by Friday", "nenu repu 4 ki hackathon ki velali". Aura works out the task or event, and picks a free slot if you gave no time.</p>
     <p><b>Milestones and study slots:</b> "add hackathon milestone submit prototype on 20 November", "schedule study slot tomorrow 7 to 9 pm for DSA".</p>
     <p class="faint">Nothing is saved until you press Save, and every addition then shows Undo for 8 seconds. Your voice and the sentence are processed by AuraStudent's server (Cloudflare AI) to understand them, and are not stored.</p></div></details></section>`;
@@ -3179,6 +3215,12 @@ function voiceCard(){
 const vf=document.createElement('button');vf.className='vfab';vf.id='vfab';vf.setAttribute('data-act','voice');vf.setAttribute('aria-label','Talk to Aura');vf.innerHTML=ico('mic',20);document.body.appendChild(vf)}
 /* the mic inside the Aura panel now uses the same voice commands */
 A.mic=()=>voiceTap();
+/* hold Ctrl+Alt to talk, let go to finish (laptops) */
+{let holding=false;
+ document.addEventListener('keydown',e=>{if((e.key==='Control'||e.key==='Alt')&&e.ctrlKey&&e.altKey&&!e.repeat&&!holding&&!VOREC){holding=true;VOHOLD=true;e.preventDefault();voiceTap()}},true);
+ document.addEventListener('keyup',e=>{if(holding&&(e.key==='Control'||e.key==='Alt')){holding=false;VOHOLD=false;if(VOREC){try{VOREC.stop()}catch(x){}}}},true);
+ addEventListener('blur',()=>{if(holding){holding=false;VOHOLD=false;if(VOREC){try{VOREC.stop()}catch(x){}}}});
+}
 document.addEventListener('change',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.vlang){VC().lang=t.value;save();toast('Voice language saved')}});
 Object.assign(A,{
  voiceSave:()=>{const f=VCF;vConfirmClose();if(f)vCommit(f.c)},

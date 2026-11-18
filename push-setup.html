@@ -125,12 +125,17 @@ Return ONLY JSON with these keys:
  "title":"short English title, max 60 chars, no date or time words",
  "date":"YYYY-MM-DD or empty", "time":"HH:MM start or empty", "end":"HH:MM or empty",
  "duration_min":number or 0, "type":"class|exam|study|hackathon|personal",
+ "list":"task|event|hackathon|community|course", "milestone":"for hackathons: registration|team|submission|start",
  "priority":1|2|3, "hours":estimated hours of work for a task or 0,
  "query":"for mark_done: the task name", "view":"for open_view: tasks|calendar|plan|courses|hacks|insights|profile|assistant",
  "question":"for clarify: ONE short question"}
 Rules:
 - A thing that happens at a clock time (class, meeting, hackathon round, exam, call, interview, study session at 4 pm) is add_event with time.
 - Something to do, submit, finish, join, apply, revise, or prepare, with or without a deadline, is add_task. Put the deadline in date (and time if said).
+- Anything about a HACKATHON (finding one, registering, forming a team, submitting, or the event itself, even a loose phrase like "schedule hackathon tomorrow") has list=hackathon. title is the hackathon's name if said, otherwise "Hackathon". milestone says which date it is: registration, team, submission, or start (default start). Put the date and time in date/time.
+- Joining, applying to, or attending a club, community or group ("join the coding club", "community app join") has list=community and title is the group's name. If a date or time is said it is an event in that community.
+- Learning something online or a course ("I want to do the React course", "enroll in Python on Coursera") has list=course, title is the course name, hours is hours per week if said.
+- Everything else is list=task or list=event.
 - If an event has no time, leave time empty. The app will pick a free slot.
 - "I finished X", "X is done" is mark_done. "What is on today", "do I have anything tomorrow" is summary with date.
 - If you truly cannot tell what they want, use clarify with one short question. If it is not about planning, use none.
@@ -152,6 +157,8 @@ JSON only, no commentary.`;
           end: /^([01]\d|2[0-3]):[0-5]\d$/.test(o.end) ? o.end : '',
           duration_min: Math.max(0, Math.min(720, Math.round(+o.duration_min || 0))),
           type: ['class', 'exam', 'study', 'hackathon', 'personal'].includes(o.type) ? o.type : 'personal',
+          list: ['task', 'event', 'hackathon', 'community', 'course'].includes(o.list) ? o.list : '',
+          milestone: ['registration', 'team', 'submission', 'start'].includes(o.milestone) ? o.milestone : '',
           priority: [1, 2, 3].includes(+o.priority) ? +o.priority : 2,
           hours: Math.max(0, Math.min(40, +o.hours || 0)),
           query: String(o.query || '').replace(/[&lt;&gt;]/g, '').trim().slice(0, 80),
