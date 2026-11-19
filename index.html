@@ -72,6 +72,7 @@ p{margin:0}
 .nav:hover{background:var(--surface-2);color:var(--ink)}
 .nav[aria-current="page"]{background:var(--accent-soft);color:var(--accent-ink);font-weight:650}
 .nav .badge{margin-left:auto}
+.fchoices legend{font-size:13px;font-weight:650;color:var(--ink-2);margin-bottom:6px;padding:0}.fch{display:flex;flex-wrap:wrap;gap:8px}.fch label{cursor:pointer}.fch input{position:absolute;opacity:0;pointer-events:none}.fch span{display:inline-block;padding:7px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-2);font-weight:600;font-size:14px}.fch input:checked+span{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}.fch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .moremenu{position:fixed;z-index:60;display:flex;flex-direction:column;gap:2px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px -12px rgba(0,0,0,.45)}
 .side .grow{flex:1}
 .main{min-width:0;padding-block:28px 56px;padding-left:max(28px,env(safe-area-inset-left,0px));padding-right:max(28px,env(safe-area-inset-right,0px))}
@@ -894,9 +895,8 @@ VIEWS.buddy=()=>{
   +`<section class="card"><header><h2>Add a study buddy</h2></header>
     <form data-form="buddyAdd" class="fgrid" style="align-items:end">
       <label class="f">Name<input class="in" name="name" required maxlength="60" placeholder="Friend or classmate"></label>
-      <label class="f">Usually free (optional)<input class="in" name="when" maxlength="60" placeholder="Evenings, weekends"></label>
+      <fieldset class="f fchoices" style="grid-column:1/-1;border:0;padding:0;margin:0"><legend>Usually free (optional)</legend><div class="fch">${['Mornings','Afternoons','Evenings','Weekdays','Weekends'].map(o=>`<label><input type="checkbox" name="free" value="${o}"><span>${o}</span></label>`).join('')}</div></fieldset>
       <label class="f">Courses together (optional)<input class="in" name="courses" placeholder="Python, Physics (comma separated)"></label>
-      <label class="f">Interests (optional)<input class="in" name="interests" placeholder="Hackathons, Robotics"></label>
       <button class="btn pri" style="grid-column:1/-1">${ico('plus',18)}Add buddy</button></form></section>`
   +`<section><h3 style="margin:18px 0 10px">Your study buddies</h3>${S.buddies.length?`<div class="grid3">${mine}</div>`:`<div class="card"><div class="empty"><b>No buddies yet</b>Add someone above, or pick from the suggestions below.</div></div>`}</section>`
   +`<section class="card"><header><h2>Suggested classmates</h2><span class="pill">${m.length}</span></header>
@@ -1107,7 +1107,7 @@ const F={
 };
 Object.assign(F,{buddyAdd:(d)=>{S.buddies=S.buddies||[];const name=String(d.get('name')||'').trim();if(!name)return;
   if(S.buddies.some(b=>b.name.toLowerCase()===name.toLowerCase())){toast(name+' is already in your buddies');return}
-  S.buddies.push({id:'b'+uid(),name,when:String(d.get('when')||'').trim(),courses:splitList(d.get('courses')),interests:splitList(d.get('interests'))});save();render();toast('Added '+name)}});
+  S.buddies.push({id:'b'+uid(),name,when:d.getAll('free').join(', '),courses:splitList(d.get('courses')),interests:[]});save();render();toast('Added '+name)}});
 A.invCopy=()=>{const t=$('#inv');t.select();(navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).then(()=>toast('Copied')).catch(()=>toast('Press Ctrl+C to copy'))};
 
 /* reminders */
