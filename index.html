@@ -904,7 +904,7 @@ VIEWS.buddy=()=>{
     ${m.length?`<div class="grid3">${m.map(({x,sc,si,pct})=>`<article class="card opp"><div class="top"><div><h3>${esc(x.n)}</h3><span class="pill">Suggestion</span><div class="sm muted">Usually free: ${x.when}</div></div><div class="fit"><b class="num">${pct}%</b><div class="meter"><i style="width:${pct}%"></i></div></div></div>
     <div class="chips">${sc.map(c=>`<span class="chip match">${esc(c)}</span>`).join('')}${si.map(c=>`<span class="chip plain">${esc(c)}</span>`).join('')}${!sc.length&&!si.length?'<span class="sm muted">No overlap yet.</span>':''}</div>
     <div class="row" style="gap:8px;margin-top:auto;flex-wrap:wrap"><button class="btn sm" data-act="buddyFromSug" data-arg="${esc(x.n)}">${ico('plus',16)}Add as buddy</button><button class="btn sm ghost" data-act="roomOpen" data-arg="${esc(x.n)}">Propose a study room</button></div></article>`).join('')}</div>`:'<div class="empty"><b>No more suggestions</b>You have added all of them.</div>'}</section>`
-  +`<section class="card"><header><h2>Your study rooms</h2><button class="btn sm pri" data-act="roomNew">${ico('plus',16)}Create a study room</button></header>${(S.rooms.forEach(r=>{if(!r.id)r.id='r'+uid()}),S.rooms.length)?S.rooms.map(r=>`<div class="dl"><div><b>${esc(r.topic)}</b><div class="sm muted">with ${esc(r.who)} · ${esc(r.where)}</div></div><div class="row" style="gap:10px;align-items:center"><div class="sm num" style="text-align:right">${fd(r.date)}<br>${r.start} to ${r.end}</div>${UI.delRoom===r.id?`<button class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)" data-act="roomDel" data-arg="${esc(r.id)}">Remove?</button><button class="btn sm ghost" data-act="roomDelCancel">Keep</button>`:`<button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Remove study room ${esc(r.topic)}" data-act="roomDel" data-arg="${esc(r.id)}">${ico('trash',16)}</button>`}</div></div>`).join(''):`<div class="empty"><b>No rooms yet</b>Press Create a study room, or pick one of your buddies above to plan one.</div>`}</section>`;
+  +`<section class="card"><header><h2>Your study rooms</h2><button class="btn sm pri" data-act="roomNew">${ico('plus',16)}Create a study room</button></header>${(S.rooms.forEach(r=>{if(!r.id)r.id='r'+uid()}),S.rooms.length)?S.rooms.map(r=>`<div class="dl"><div><b>${esc(r.topic)}</b><div class="sm muted">with ${esc(r.who)} · ${esc(r.where)}${/^https?:\/\//i.test(r.link||'')?` · <a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">Open link</a>`:''}</div></div><div class="row" style="gap:10px;align-items:center"><div class="sm num" style="text-align:right">${fd(r.date)}<br>${r.start} to ${r.end}</div>${UI.delRoom===r.id?`<button class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)" data-act="roomDel" data-arg="${esc(r.id)}">Remove?</button><button class="btn sm ghost" data-act="roomDelCancel">Keep</button>`:`<button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Remove study room ${esc(r.topic)}" data-act="roomDel" data-arg="${esc(r.id)}">${ico('trash',16)}</button>`}</div></div>`).join(''):`<div class="empty"><b>No rooms yet</b>Press Create a study room, or pick one of your buddies above to plan one.</div>`}</section>`;
 };
 
 function buddyResults(q){
@@ -1008,6 +1008,7 @@ function roomModal(who){
    <label class="f">Starts<input class="in" type="time" id="rm-start" name="start" value="${hm(best.s)}"></label>
    <label class="f">Ends<input class="in" type="time" id="rm-end" name="end" value="${hm(best.s+90)}"></label>
    <label class="f">Where<select class="in" id="rm-where" name="where"><option>Virtual · Google Meet</option><option>Virtual · Discord</option><option>Library, group table</option></select></label>
+   <label class="f" id="rm-link-wrap" style="grid-column:1/-1">Meeting link<input class="in" type="url" id="rm-link" name="link" required pattern="https?://.+" placeholder="https://meet.google.com/..." title="Enter a full link starting with http:// or https://"></label>
    <p class="sm muted" style="grid-column:1/-1">The time shown is the first 90 minute gap in your calendar.</p>
    <div class="row" style="grid-column:1/-1;justify-content:flex-end"><button type="button" class="btn" data-act="closeModal">Cancel</button><button class="btn pri">Add to my calendar</button></div></form>`);
 }
@@ -1099,10 +1100,10 @@ const F={
  chipAdd:(d,f)=>{const v=d.get('v').trim(),a=S.profile[f.dataset.field];if(v&&!a.some(x=>x.toLowerCase()===v.toLowerCase()))a.push(v);save();render();const i=$('#chip-'+f.dataset.field);i&&i.focus()},
  roomSave:(d,f)=>{const s=d.get('start'),e=d.get('end');if(mins(e)<=mins(s)){toast('End time must be after the start time');return}
    const mem=d.getAll('mem'),who=f.dataset.who||(mem.length?mem.join(', '):'myself');
-   const r={id:'r'+uid(),topic:d.get('topic').trim(),who,date:d.get('date'),start:s,end:e,where:d.get('where')};
+   const r={id:'r'+uid(),topic:d.get('topic').trim(),who,date:d.get('date'),start:s,end:e,where:d.get('where')},lk=String(d.get('link')||'').trim();if(/^Virtual/.test(r.where)&&!/^https?:\/\/\S+$/i.test(lk)){toast('Add the meeting link for a virtual room');return}if(lk)r.link=lk;
    const ev={id:'e'+uid(),title:`Study room: ${r.topic} with ${r.who}`,type:'study',date:r.date,start:s,end:e,loc:r.where};r.eid=ev.id;
    S.rooms.push(r);S.events.push(ev);save();
-   const msg=`Hi ${r.who==='myself'?'there':r.who.split(',')[0].split(' ')[0]}${mem.length>1?' and team':''}, want to study ${r.topic} together on ${fd(r.date)}, ${s} to ${e}? We can use ${r.where}.`;
+   const msg=`Hi ${r.who==='myself'?'there':r.who.split(',')[0].split(' ')[0]}${mem.length>1?' and team':''}, want to study ${r.topic} together on ${fd(r.date)}, ${s} to ${e}? We can use ${r.where}${r.link?': '+r.link:''}.`;
    modal(`${mh('Room added to your calendar','Nothing has been sent. Copy this message to invite them yourself.')}<textarea class="in" id="inv" readonly style="min-height:90px;font-family:inherit;font-size:15px">${esc(msg)}</textarea><div class="row"><button class="btn pri" data-act="invCopy">Copy message</button><button class="btn" data-act="closeModal">Done</button></div>`);render()}
 };
 Object.assign(F,{buddyAdd:(d)=>{S.buddies=S.buddies||[];const name=String(d.get('name')||'').trim();if(!name)return;
@@ -3530,6 +3531,8 @@ Object.assign(A,{
   taskDel:el=>{const t=S.tasks.find(x=>x.id===el.dataset.arg);if(!t)return;const copy={...t};if(!TS.remove(t)){toast('Could not delete: storage did not accept it');return}
     toast('Deleted. Find it under Recently deleted.')}
 });
+function roomLinkSync(){const sel=document.getElementById('rm-where'),w=document.getElementById('rm-link-wrap'),i=document.getElementById('rm-link');if(!sel||!w||!i)return;const virt=/^Virtual/.test(sel.value);w.hidden=!virt;w.style.display=virt?'':'none';i.required=virt;i.disabled=!virt;if(!virt)i.value=''}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='rm-where')roomLinkSync()});
 document.addEventListener('change',e=>{const el=e.target;if(!el||!el.dataset)return;
   if(el.dataset.tcat){const t=S.tasks.find(x=>x.id===el.dataset.tcat);if(t){const snap=TS.patch(t,{cat:el.value});toast(snap?`Moved to ${CATL[el.value]}`:'Could not save the change')}}
   if(el.dataset.tdue){const t=S.tasks.find(x=>x.id===el.dataset.tdue);if(t&&/^\d{4}-\d{2}-\d{2}$/.test(el.value)){const snap=TS.patch(t,{due:el.value});toast(snap?`Moved to ${fd(el.value)}. Reminder updated.`:'Could not save the change')}}
