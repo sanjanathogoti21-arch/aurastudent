@@ -879,15 +879,48 @@ const PEERS=[
  {n:'Rohan D.',c:['Programming in Python','Engineering Mathematics I','Engineering Physics'],i:['Open source','Hackathons'],when:'After 17:00'},
  {n:'Isha P.',c:['Engineering Graphics','Programming in Python'],i:['Design','Web development'],when:'Afternoons'}
 ];
+const splitList=v=>String(v||'').split(/[,;\n]/).map(x=>x.trim()).filter(Boolean).slice(0,8);
 VIEWS.buddy=()=>{
-  const p=S.profile,m=PEERS.map(x=>{const sc=x.c.filter(c=>p.subjects.includes(c)),si=x.i.filter(i=>p.interests.includes(i));return {x,sc,si,pct:Math.min(98,sc.length*28+si.length*18+10)}}).sort((a,b)=>b.pct-a.pct);
-  return head('Study buddy','Classmates who share your courses or interests, and quick virtual study rooms.')
-  +`<div class="banner"><span>${ico('warn',20)}</span><div><b>Demo classmates.</b> These people are invented to show how matching works. Creating a room adds it to your calendar and gives you a message to copy. Nothing is sent to anyone.</div></div>`
-  +`<div class="grid3">${m.map(({x,sc,si,pct})=>`<article class="card opp"><div class="top"><div><h3>${esc(x.n)}</h3><div class="sm muted">Usually free: ${x.when}</div></div><div class="fit"><b class="num">${pct}%</b><div class="meter"><i style="width:${pct}%"></i></div></div></div>
+  const p=S.profile;S.buddies=S.buddies||[];
+  const have=new Set(S.buddies.map(b=>b.name.toLowerCase()));
+  const m=PEERS.filter(x=>!have.has(x.n.toLowerCase())).map(x=>{const sc=x.c.filter(c=>p.subjects.includes(c)),si=x.i.filter(i=>p.interests.includes(i));return {x,sc,si,pct:Math.min(98,sc.length*28+si.length*18+10)}}).sort((a,b)=>b.pct-a.pct);
+  const mine=S.buddies.map(b=>`<article class="card opp"><div class="top"><div><h3>${esc(b.name)}</h3><span class="pill ok">Added by you</span><div class="sm muted">${b.when?'Usually free: '+esc(b.when):'Free time not added'}</div></div><button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Remove ${esc(b.name)}" data-act="buddyDel" data-arg="${esc(b.id)}">${ico('trash',16)}</button></div>
+    <div class="chips">${(b.courses||[]).map(c=>`<span class="chip match">${esc(c)}</span>`).join('')}${(b.interests||[]).map(c=>`<span class="chip plain">${esc(c)}</span>`).join('')}${!(b.courses||[]).length&&!(b.interests||[]).length?'<span class="sm muted">No courses or interests added.</span>':''}</div>
+    <button class="btn sm pri" style="align-self:flex-start;margin-top:auto" data-act="roomOpen" data-arg="${esc(b.name)}">Propose a study room</button></article>`).join('');
+  return head('Study buddy','Add the people you study with, and plan quick virtual study rooms.')
+  +`<section class="card"><header><h2>Find people to add</h2></header>
+    <label class="f">Search by name, course or interest<input class="in" id="bq" data-bq="1" autocomplete="off" maxlength="60" placeholder="Try Python, Hackathons or a friend's name"></label>
+    <div id="bres" style="margin-top:10px">${buddyResults('')}</div></section>`
+  +`<section class="card"><header><h2>Add a study buddy</h2></header>
+    <form data-form="buddyAdd" class="fgrid" style="align-items:end">
+      <label class="f">Name<input class="in" name="name" required maxlength="60" placeholder="Friend or classmate"></label>
+      <label class="f">Usually free (optional)<input class="in" name="when" maxlength="60" placeholder="Evenings, weekends"></label>
+      <label class="f">Courses together (optional)<input class="in" name="courses" placeholder="Python, Physics (comma separated)"></label>
+      <label class="f">Interests (optional)<input class="in" name="interests" placeholder="Hackathons, Robotics"></label>
+      <button class="btn pri" style="grid-column:1/-1">${ico('plus',18)}Add buddy</button></form></section>`
+  +`<section><h3 style="margin:18px 0 10px">Your study buddies</h3>${S.buddies.length?`<div class="grid3">${mine}</div>`:`<div class="card"><div class="empty"><b>No buddies yet</b>Add someone above, or pick from the suggestions below.</div></div>`}</section>`
+  +`<section class="card"><header><h2>Suggested classmates</h2><span class="pill">${m.length}</span></header>
+    <div class="banner" style="margin-bottom:12px"><span>${ico('warn',20)}</span><div><b>Demo classmates.</b> These people are invented to show how matching works. Nothing is sent to anyone. They are only added to your buddies if you press Add.</div></div>
+    ${m.length?`<div class="grid3">${m.map(({x,sc,si,pct})=>`<article class="card opp"><div class="top"><div><h3>${esc(x.n)}</h3><span class="pill">Suggestion</span><div class="sm muted">Usually free: ${x.when}</div></div><div class="fit"><b class="num">${pct}%</b><div class="meter"><i style="width:${pct}%"></i></div></div></div>
     <div class="chips">${sc.map(c=>`<span class="chip match">${esc(c)}</span>`).join('')}${si.map(c=>`<span class="chip plain">${esc(c)}</span>`).join('')}${!sc.length&&!si.length?'<span class="sm muted">No overlap yet.</span>':''}</div>
-    <button class="btn sm pri" style="align-self:flex-start;margin-top:auto" data-act="roomOpen" data-arg="${esc(x.n)}">Propose a study room</button></article>`).join('')}</div>`
-  +`<section class="card"><header><h2>Your study rooms</h2></header>${S.rooms.length?S.rooms.map(r=>`<div class="dl"><div><b>${esc(r.topic)}</b><div class="sm muted">with ${esc(r.who)} · ${esc(r.where)}</div></div><div class="sm num" style="text-align:right">${fd(r.date)}<br>${r.start} to ${r.end}</div></div>`).join(''):`<div class="empty"><b>No rooms yet</b>Pick a classmate above to plan one.</div>`}</section>`;
+    <div class="row" style="gap:8px;margin-top:auto;flex-wrap:wrap"><button class="btn sm" data-act="buddyFromSug" data-arg="${esc(x.n)}">${ico('plus',16)}Add as buddy</button><button class="btn sm ghost" data-act="roomOpen" data-arg="${esc(x.n)}">Propose a study room</button></div></article>`).join('')}</div>`:'<div class="empty"><b>No more suggestions</b>You have added all of them.</div>'}</section>`
+  +`<section class="card"><header><h2>Your study rooms</h2></header>${S.rooms.length?S.rooms.map(r=>`<div class="dl"><div><b>${esc(r.topic)}</b><div class="sm muted">with ${esc(r.who)} · ${esc(r.where)}</div></div><div class="sm num" style="text-align:right">${fd(r.date)}<br>${r.start} to ${r.end}</div></div>`).join(''):`<div class="empty"><b>No rooms yet</b>Pick one of your buddies above to plan one.</div>`}</section>`;
 };
+
+function buddyResults(q){
+  q=String(q||'').trim().toLowerCase();S.buddies=S.buddies||[];
+  if(!q)return '<p class="sm muted">Type to search. Results show people you can add, and people already in your group.</p>';
+  const mine=S.buddies.filter(b=>[b.name,...(b.courses||[]),...(b.interests||[])].join(' ').toLowerCase().includes(q));
+  const have=new Set(S.buddies.map(b=>b.name.toLowerCase()));
+  const sug=PEERS.filter(x=>!have.has(x.n.toLowerCase())&&[x.n,...x.c,...x.i].join(' ').toLowerCase().includes(q));
+  const row=(name,sub,tag,btn)=>`<div class="row" style="justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><div style="min-width:0"><b>${esc(name)}</b> <span class="pill ${tag==='Added by you'?'ok':''}">${tag}</span><div class="sm muted">${sub}</div></div>${btn}</div>`;
+  const typed=String(q).length>=2&&!have.has(q)&&!PEERS.some(x=>x.n.toLowerCase()===q)&&!sug.length&&!mine.length;
+  const rawName=document.getElementById('bq')?document.getElementById('bq').value.trim():'';
+  return (mine.map(b=>row(b.name,'Already in your study group','Added by you','<span class="sm muted">Added</span>')).join('')
+   +sug.map(x=>row(x.n,'Demo classmate · '+esc(x.c.join(', ')),'Suggestion',`<button class="btn sm" data-act="buddyFromSug" data-arg="${esc(x.n)}">${ico('plus',16)}Add</button>`)).join('')
+   +(typed&&rawName?row(rawName,'Add this person by name. Nothing is sent to them.','New person',`<button class="btn sm pri" data-act="buddyAddName" data-arg="${esc(rawName)}">${ico('plus',16)}Add "${esc(rawName.slice(0,24))}"</button>`):''))||'<p class="sm muted">No match.</p>';
+}
+document.addEventListener('input',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.bq){const r=document.getElementById('bres');if(r)r.innerHTML=buddyResults(t.value)}});
 
 /* profile */
 function chipEd(field,label,ph){return `<div><div class="sm" style="font-weight:650;margin-bottom:8px;color:var(--ink-2)">${label}</div><div class="chips" style="margin-bottom:10px">${S.profile[field].map(v=>`<span class="chip">${esc(v)}<button aria-label="Remove ${esc(v)}" data-act="chipDel" data-field="${field}" data-arg="${esc(v)}">${ico('x',12)}</button></span>`).join('')||'<span class="sm faint">Nothing added yet</span>'}</div><form data-form="chipAdd" data-field="${field}" class="row"><input class="in" name="v" id="chip-${field}" placeholder="${ph}" aria-label="Add to ${label}" style="max-width:240px" required><button class="btn sm">${ico('plus',16)}Add</button></form></div>`}
@@ -1034,6 +1067,13 @@ const A={
  wipeAsk:()=>{UI.confirmWipe=true;render()},wipeCancel:()=>{UI.confirmWipe=false;render()},
  wipe:()=>{const keep={ntfy:S.ntfy,push:S.push,sync:S.sync,voice:S.voice,account:{clientId:(S.account&&S.account.clientId)||'',name:'',email:''}};S=Object.assign(freshStart(),keep);ensureNew(S);UI.confirmWipe=false;try{localStorage.removeItem(KEY)}catch(e){}save();render();toast('All your data was deleted')}
 };
+Object.assign(A,{
+  buddyAddName:el=>{const name=String(el.dataset.arg||'').trim().slice(0,60);if(!name)return;S.buddies=S.buddies||[];if(S.buddies.some(b=>b.name.toLowerCase()===name.toLowerCase())){toast(name+' is already in your buddies');return}
+    S.buddies.push({id:'b'+uid(),name,when:'',courses:[],interests:[]});save();render();toast('Added '+name+' to your study group')},
+  buddyDel:el=>{const b=(S.buddies||[]).find(x=>x.id===el.dataset.arg);if(!b)return;S.buddies=S.buddies.filter(x=>x.id!==b.id);save();render();toast('Removed '+b.name)},
+  buddyFromSug:el=>{const x=PEERS.find(q=>q.n===el.dataset.arg);if(!x)return;S.buddies=S.buddies||[];if(S.buddies.some(b=>b.name.toLowerCase()===x.n.toLowerCase()))return;
+    S.buddies.push({id:'b'+uid(),name:x.n,when:x.when,courses:[...x.c],interests:[...x.i]});save();render();toast('Added '+x.n+' to your buddies')}
+});
 const F={
  evSave:(d,f)=>{
    const title=d.get('title').trim(),date=d.get('date'),s=d.get('start'),e=d.get('end');
@@ -1054,6 +1094,9 @@ const F={
    const msg=`Hi ${r.who.split(' ')[0]}, want to study ${r.topic} together on ${fd(r.date)}, ${s} to ${e}? We can use ${r.where}.`;
    modal(`${mh('Room added to your calendar','Nothing has been sent. Copy this message to invite them yourself.')}<textarea class="in" id="inv" readonly style="min-height:90px;font-family:inherit;font-size:15px">${esc(msg)}</textarea><div class="row"><button class="btn pri" data-act="invCopy">Copy message</button><button class="btn" data-act="closeModal">Done</button></div>`);render()}
 };
+Object.assign(F,{buddyAdd:(d)=>{S.buddies=S.buddies||[];const name=String(d.get('name')||'').trim();if(!name)return;
+  if(S.buddies.some(b=>b.name.toLowerCase()===name.toLowerCase())){toast(name+' is already in your buddies');return}
+  S.buddies.push({id:'b'+uid(),name,when:String(d.get('when')||'').trim(),courses:splitList(d.get('courses')),interests:splitList(d.get('interests'))});save();render();toast('Added '+name)}});
 A.invCopy=()=>{const t=$('#inv');t.select();(navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).then(()=>toast('Copied')).catch(()=>toast('Press Ctrl+C to copy'))};
 
 /* reminders */
@@ -2073,7 +2116,7 @@ function applyImport(d,mode){
   const keepNtfy=S.ntfy,keepAcct=S.account;
   if(mode==='replace'){
     const b=seed();
-    S={profile:d.profile?Object.assign({},b.profile,d.profile):b.profile,events:d.events||[],tasks:d.tasks||[],sugs:[],unplaced:[],habits:d.habits||[],opps:d.opps||b.opps,rooms:d.rooms||[],notif:Object.assign({},b.notif,d.notif||{}),learn:d.learn||{notes:[],estMult:{}},chat:d.chat||[],auto:Object.assign({},b.auto,d.auto||{}),items:d.items||[],hacks:d.hacks||[],comms:d.comms||[],templates:d.templates||DEFTPL(),att:d.att||{snooze:{}},fired:{}};
+    S={profile:d.profile?Object.assign({},b.profile,d.profile):b.profile,events:d.events||[],tasks:d.tasks||[],sugs:[],unplaced:[],habits:d.habits||[],opps:d.opps||b.opps,rooms:d.rooms||[],buddies:d.buddies||[],archive:d.archive||[],notif:Object.assign({},b.notif,d.notif||{}),learn:d.learn||{notes:[],estMult:{}},chat:d.chat||[],auto:Object.assign({},b.auto,d.auto||{}),items:d.items||[],hacks:d.hacks||[],comms:d.comms||[],templates:d.templates||DEFTPL(),att:d.att||{snooze:{}},fired:{}};
     S.learn.notes=S.learn.notes||[];S.learn.estMult=S.learn.estMult||{};
     if(keepNtfy)S.ntfy=keepNtfy;if(keepAcct)S.account=keepAcct;
     ensureNew(S);return COLS.reduce((a,[k])=>a+(d[k]||[]).length,0);
