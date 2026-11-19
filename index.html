@@ -72,6 +72,7 @@ p{margin:0}
 .nav:hover{background:var(--surface-2);color:var(--ink)}
 .nav[aria-current="page"]{background:var(--accent-soft);color:var(--accent-ink);font-weight:650}
 .nav .badge{margin-left:auto}
+.moremenu{position:fixed;z-index:60;display:flex;flex-direction:column;gap:2px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px -12px rgba(0,0,0,.45)}
 .side .grow{flex:1}
 .main{min-width:0;padding-block:28px 56px;padding-left:max(28px,env(safe-area-inset-left,0px));padding-right:max(28px,env(safe-area-inset-right,0px))}
 .wrap{max-width:1160px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
@@ -649,10 +650,23 @@ function fitOf(o){
 
 /* ---------- views ---------- */
 const NAV=[['today','Today','today'],['assistant','Aura assistant','chat'],['calendar','Calendar','cal'],['tasks','Tasks','tasks'],['captured','Captured','inbox'],['comms','Communities & Events','users'],['hacks','Hackathons','flag'],['plan','Smart plan','plan'],['templates','Study templates','tpl'],['notes','Notes to quiz','book'],['discover','Discover','disc'],['insights','Insights','chart'],['buddy','Study buddy','users'],['profile','Profile','user']];
+const MORE_VIEWS=['templates','notes','discover','insights','profile'];
+function sideMoreClose(){UI.sideMore=false;const m=document.getElementById('sidemore');if(m)m.remove();const b=document.getElementById('sidemorebtn');if(b)b.setAttribute('aria-expanded','false')}
+function sideMoreOpen(){
+  sideMoreClose();const b=document.getElementById('sidemorebtn');if(!b)return;UI.sideMore=true;b.setAttribute('aria-expanded','true');
+  const pend=upcomingRems().length,item=k=>{const n=NAV.find(x=>x[0]===k);return `<button class="nav" role="menuitem" data-act="nav" data-arg="${k}" ${UI.view===k?'aria-current="page"':''}>${ico(n[2])}${n[1]}</button>`};
+  const m=document.createElement('div');m.id='sidemore';m.className='moremenu';m.setAttribute('role','menu');m.setAttribute('aria-label','More');
+  m.innerHTML=item('templates')+item('notes')+item('discover')+item('insights')+item('profile')+`<button class="nav" role="menuitem" data-act="bell">${ico('bell')}Reminders${pend?`<span class="pill bad badge">${pend}</span>`:''}</button><button class="nav" role="menuitem" data-act="theme">${ico(isDark()?'sun':'moon')}${isDark()?'Light mode':'Dark mode'}</button>`;
+  document.body.appendChild(m);
+  const r=b.getBoundingClientRect(),h=m.offsetHeight;m.style.left=(r.left)+'px';m.style.width=Math.max(r.width,210)+'px';m.style.top=Math.max(8,Math.min(r.top-h-6,innerHeight-h-8))+'px';
+}
+document.addEventListener('click',e=>{const t=e.target;if(!UI.sideMore)return;if(t.closest&&t.closest('#sidemorebtn'))return;sideMoreClose()},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&UI.sideMore){sideMoreClose();const b=document.getElementById('sidemorebtn');if(b)b.focus()}});
 function renderNav(){
   const al=attention().length,pend=upcomingRems().length;
-  $('#side').innerHTML=`<div class="brand">${logo()}AuraStudent</div>`+NAV.map(([k,l,i])=>`<button class="nav" data-act="nav" data-arg="${k}" ${UI.view===k?'aria-current="page"':''}>${ico(i)}${l}${k==='today'&&al?`<span class="pill bad badge">${al}</span>`:''}</button>`).join('')
-   +`<div class="grow"></div><button class="nav" data-act="bell">${ico('bell')}Reminders${pend?`<span class="pill bad badge">${pend}</span>`:''}</button>${canInstall()?`<button class="nav" data-act="install">${ico('export')}Install app</button>`:''}<button class="nav" data-act="theme">${ico(isDark()?'sun':'moon')}${isDark()?'Light mode':'Dark mode'}</button>`;
+  $('#side').innerHTML=`<div class="brand">${logo()}AuraStudent</div>`+NAV.filter(n=>!MORE_VIEWS.includes(n[0])).map(([k,l,i])=>`<button class="nav" data-act="nav" data-arg="${k}" ${UI.view===k?'aria-current="page"':''}>${ico(i)}${l}${k==='today'&&al?`<span class="pill bad badge">${al}</span>`:''}</button>`).join('')
+   +`<div class="grow"></div>${canInstall()?`<button class="nav" data-act="install">${ico('export')}Install app</button>`:''}<button class="nav" id="sidemorebtn" data-act="sideMore" aria-haspopup="menu" aria-expanded="${!!UI.sideMore}" ${MORE_VIEWS.includes(UI.view)?'aria-current="page"':''}>${ico('more')}More${pend?`<span class="pill bad badge">${pend}</span>`:''}</button>`;
+  sideMoreClose();
   $('#mbrand').innerHTML=logo()+'AuraStudent';
   $('.mhead [data-act=theme]').innerHTML=ico(isDark()?'sun':'moon');
   $('#capfab').innerHTML=ico('plus',18)+'<span>Capture</span>';$('#orb').innerHTML=logo();$('#orb').hidden=UI.view==='assistant';
@@ -968,6 +982,7 @@ let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add
 function go(v){UI.view=v;UI.editSug=null;render();window.scrollTo({top:0});try{localStorage.setItem('aurastudent.view',v)}catch(e){}}
 const A={
  nav:el=>{closeM();go(el.dataset.arg)},
+ sideMore:()=>{if(UI.sideMore)sideMoreClose();else sideMoreOpen()},
  theme:()=>{const n=isDark()?'light':'dark';document.documentElement.dataset.theme=n;try{localStorage.setItem(TKEY,n)}catch(e){}render()},
  closeModal:(el,e)=>{if(el.classList.contains('scrim')&&e.target!==el)return;closeM()},
  fixWeek:()=>{generatePlan();go('plan');toast(S.sugs.length?`${S.sugs.length} sessions suggested`:'Nothing to schedule')},
