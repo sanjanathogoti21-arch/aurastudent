@@ -904,7 +904,7 @@ VIEWS.buddy=()=>{
     ${m.length?`<div class="grid3">${m.map(({x,sc,si,pct})=>`<article class="card opp"><div class="top"><div><h3>${esc(x.n)}</h3><span class="pill">Suggestion</span><div class="sm muted">Usually free: ${x.when}</div></div><div class="fit"><b class="num">${pct}%</b><div class="meter"><i style="width:${pct}%"></i></div></div></div>
     <div class="chips">${sc.map(c=>`<span class="chip match">${esc(c)}</span>`).join('')}${si.map(c=>`<span class="chip plain">${esc(c)}</span>`).join('')}${!sc.length&&!si.length?'<span class="sm muted">No overlap yet.</span>':''}</div>
     <div class="row" style="gap:8px;margin-top:auto;flex-wrap:wrap"><button class="btn sm" data-act="buddyFromSug" data-arg="${esc(x.n)}">${ico('plus',16)}Add as buddy</button><button class="btn sm ghost" data-act="roomOpen" data-arg="${esc(x.n)}">Propose a study room</button></div></article>`).join('')}</div>`:'<div class="empty"><b>No more suggestions</b>You have added all of them.</div>'}</section>`
-  +`<section class="card"><header><h2>Your study rooms</h2></header>${S.rooms.length?S.rooms.map(r=>`<div class="dl"><div><b>${esc(r.topic)}</b><div class="sm muted">with ${esc(r.who)} · ${esc(r.where)}</div></div><div class="sm num" style="text-align:right">${fd(r.date)}<br>${r.start} to ${r.end}</div></div>`).join(''):`<div class="empty"><b>No rooms yet</b>Pick one of your buddies above to plan one.</div>`}</section>`;
+  +`<section class="card"><header><h2>Your study rooms</h2><button class="btn sm pri" data-act="roomNew">${ico('plus',16)}Create a study room</button></header>${(S.rooms.forEach(r=>{if(!r.id)r.id='r'+uid()}),S.rooms.length)?S.rooms.map(r=>`<div class="dl"><div><b>${esc(r.topic)}</b><div class="sm muted">with ${esc(r.who)} · ${esc(r.where)}</div></div><div class="row" style="gap:10px;align-items:center"><div class="sm num" style="text-align:right">${fd(r.date)}<br>${r.start} to ${r.end}</div>${UI.delRoom===r.id?`<button class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)" data-act="roomDel" data-arg="${esc(r.id)}">Remove?</button><button class="btn sm ghost" data-act="roomDelCancel">Keep</button>`:`<button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Remove study room ${esc(r.topic)}" data-act="roomDel" data-arg="${esc(r.id)}">${ico('trash',16)}</button>`}</div></div>`).join(''):`<div class="empty"><b>No rooms yet</b>Press Create a study room, or pick one of your buddies above to plan one.</div>`}</section>`;
 };
 
 function buddyResults(q){
@@ -1000,7 +1000,9 @@ function roomModal(who){
   const t0=today();let d=t0,best=null;
   for(let i=0;i<7&&!best;i++){d=addDays(t0,i);const f=freeIntervals(d,[]).find(x=>x[1]-x[0]>=90&&(i>0||x[1]>nowM()+60));if(f)best={d,s:i===0?Math.max(f[0],Math.ceil((nowM()+30)/30)*30):f[0]}}
   best=best||{d:t0,s:1080};
-  modal(`${mh('Propose a study room',`With ${esc(who)}`)}<form data-form="roomSave" data-who="${esc(who)}" class="fgrid">
+  const pick=!who,bud=S.buddies||[];
+  modal(`${mh(pick?'Create a study room':'Propose a study room',pick?'Choose who joins, or leave everyone unticked for a solo room.':`With ${esc(who)}`)}<form data-form="roomSave" data-who="${esc(who)}" class="fgrid">
+   ${pick?`<fieldset style="grid-column:1/-1;border:0;padding:0;margin:0"><legend class="sm" style="font-weight:650;margin-bottom:6px">Who joins</legend>${bud.length?bud.map(b=>`<label class="row" style="gap:8px;padding:3px 0"><input type="checkbox" name="mem" value="${esc(b.name)}">${esc(b.name)}</label>`).join(''):'<span class="sm muted">No study buddies added yet. The room will be just for you.</span>'}</fieldset>`:''}
    <label class="f" style="grid-column:1/-1">Topic<input class="in" id="rm-topic" name="topic" required value="Python practice" ></label>
    <label class="f">Date<input class="in" type="date" id="rm-date" name="date" value="${best.d}"></label>
    <label class="f">Starts<input class="in" type="time" id="rm-start" name="start" value="${hm(best.s)}"></label>
@@ -1049,6 +1051,13 @@ const A={
  habitToggle:el=>{const h=S.habits.find(x=>x.id===el.dataset.arg),d=el.dataset.date;if(h){h.log[d]?delete h.log[d]:h.log[d]=true;save();render()}},
  habitDel:el=>{S.habits=S.habits.filter(x=>x.id!==el.dataset.arg);save();render()},
  roomOpen:el=>roomModal(el.dataset.arg),
+ roomNew:()=>roomModal(''),
+ roomDelCancel:()=>{UI.delRoom=null;render()},
+ roomDel:el=>{const id=el.dataset.arg,r=S.rooms.find(x=>x.id===id);if(!r)return;
+   if(UI.delRoom!==id){UI.delRoom=id;render();return}
+   UI.delRoom=null;S.rooms=S.rooms.filter(x=>x.id!==id);
+   S.events=S.events.filter(e=>r.eid?e.id!==r.eid:!(e.title===`Study room: ${r.topic} with ${r.who}`&&e.date===r.date&&e.start===r.start));
+   save();render();toast('Study room removed')},
  chipDel:el=>{const a=S.profile[el.dataset.field],i=a.indexOf(el.dataset.arg);if(i>=0)a.splice(i,1);save();render()},
  peak:el=>{S.profile.peak=el.dataset.arg;save();render()},
  notif:el=>{S.notif[el.dataset.arg]=!S.notif[el.dataset.arg];save();render()},
@@ -1089,9 +1098,11 @@ const F={
  habitAdd:d=>{S.habits.push({id:'h'+uid(),name:d.get('name').trim(),log:{}});save();render()},
  chipAdd:(d,f)=>{const v=d.get('v').trim(),a=S.profile[f.dataset.field];if(v&&!a.some(x=>x.toLowerCase()===v.toLowerCase()))a.push(v);save();render();const i=$('#chip-'+f.dataset.field);i&&i.focus()},
  roomSave:(d,f)=>{const s=d.get('start'),e=d.get('end');if(mins(e)<=mins(s)){toast('End time must be after the start time');return}
-   const r={topic:d.get('topic').trim(),who:f.dataset.who,date:d.get('date'),start:s,end:e,where:d.get('where')};
-   S.rooms.push(r);S.events.push({id:'e'+uid(),title:`Study room: ${r.topic} with ${r.who}`,type:'study',date:r.date,start:s,end:e,loc:r.where});save();
-   const msg=`Hi ${r.who.split(' ')[0]}, want to study ${r.topic} together on ${fd(r.date)}, ${s} to ${e}? We can use ${r.where}.`;
+   const mem=d.getAll('mem'),who=f.dataset.who||(mem.length?mem.join(', '):'myself');
+   const r={id:'r'+uid(),topic:d.get('topic').trim(),who,date:d.get('date'),start:s,end:e,where:d.get('where')};
+   const ev={id:'e'+uid(),title:`Study room: ${r.topic} with ${r.who}`,type:'study',date:r.date,start:s,end:e,loc:r.where};r.eid=ev.id;
+   S.rooms.push(r);S.events.push(ev);save();
+   const msg=`Hi ${r.who==='myself'?'there':r.who.split(',')[0].split(' ')[0]}${mem.length>1?' and team':''}, want to study ${r.topic} together on ${fd(r.date)}, ${s} to ${e}? We can use ${r.where}.`;
    modal(`${mh('Room added to your calendar','Nothing has been sent. Copy this message to invite them yourself.')}<textarea class="in" id="inv" readonly style="min-height:90px;font-family:inherit;font-size:15px">${esc(msg)}</textarea><div class="row"><button class="btn pri" data-act="invCopy">Copy message</button><button class="btn" data-act="closeModal">Done</button></div>`);render()}
 };
 Object.assign(F,{buddyAdd:(d)=>{S.buddies=S.buddies||[];const name=String(d.get('name')||'').trim();if(!name)return;
