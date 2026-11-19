@@ -3233,11 +3233,12 @@ function voiceCard(){
 #vbanner.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #vbanner .vtx{min-width:0;overflow-wrap:anywhere}#vbanner .vdot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}#vbanner .vdot.live{animation:vp 1.2s ease-in-out infinite}
 #vbanner .vlvl{width:46px;height:6px;border-radius:3px;background:color-mix(in srgb,var(--bg) 25%,transparent);overflow:hidden;flex:none}#vbanner .vlvl i{display:block;height:100%;width:0;background:var(--accent);transition:width .08s}
-.vhint{position:fixed;right:max(70px,calc(env(safe-area-inset-right,0px) + 70px));bottom:calc(168px + env(safe-area-inset-bottom,0px));font-size:12px;font-weight:600;color:var(--ink-2,var(--muted));background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px 9px;z-index:44;pointer-events:none;white-space:nowrap}
+.vhint{position:fixed;right:max(70px,calc(env(safe-area-inset-right,0px) + 70px));bottom:calc(158px + env(safe-area-inset-bottom,0px));font-size:12px;font-weight:600;line-height:1.4;color:var(--ink-2,var(--muted));background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 10px;z-index:44;pointer-events:none;white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .15s}
+.vfab:hover+.vhint,.vfab:focus-visible+.vhint{opacity:1;visibility:visible}.vhint b{color:var(--ink)}
 @media (hover:none),(pointer:coarse),(max-width:860px){.vhint{display:none}}
 select.in.tcat{width:auto;max-width:150px;display:inline-block;flex:none;min-height:0;padding:2px 24px 2px 8px;font-size:12px;height:auto}
 #vbanner .vbt{background:transparent;border:1px solid color-mix(in srgb,var(--bg) 40%,transparent);color:var(--bg);border-radius:8px;padding:4px 10px;font:inherit;font-weight:700;cursor:pointer;min-height:32px;flex:none}`;document.head.appendChild(st);
-const vf=document.createElement('button');vf.className='vfab';vf.id='vfab';vf.setAttribute('data-act','voice');vf.setAttribute('aria-label','Talk to Aura');vf.innerHTML=ico('mic',20);vf.title='Hold Ctrl + Alt to speak';document.body.appendChild(vf);const vh=document.createElement('div');vh.className='vhint';vh.id='vhint';vh.textContent='Hold Ctrl + Alt to speak.';document.body.appendChild(vh)}
+const vf=document.createElement('button');vf.className='vfab';vf.id='vfab';vf.setAttribute('data-act','voice');vf.setAttribute('aria-label','Talk to Aura');vf.innerHTML=ico('mic',20);vf.title='Hold Ctrl + Alt to speak';document.body.appendChild(vf);const vh=document.createElement('div');vh.className='vhint';vh.id='vhint';vh.innerHTML='<b>Hold Ctrl + Alt to speak.</b><br>Keep holding while you talk, then let go to finish.';document.body.appendChild(vh)}
 /* the mic inside the Aura panel now uses the same voice commands */
 A.mic=()=>voiceTap();
 /* hold Ctrl+Alt to talk, let go to finish (laptops). Ignored while typing; one session at a time; either key ends it */
