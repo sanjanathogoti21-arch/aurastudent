@@ -65,6 +65,9 @@ async function ensure(env) {
     env.DB.prepare('CREATE TABLE IF NOT EXISTS docs (k TEXT PRIMARY KEY, rev INTEGER NOT NULL, body TEXT NOT NULL, updated INTEGER)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS bu (code TEXT PRIMARY KEY, sec TEXT NOT NULL, name TEXT, endpoint TEXT, p256dh TEXT, auth TEXT, updated INTEGER)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS inv (id TEXT PRIMARY KEY, frm TEXT NOT NULL, tow TEXT NOT NULL, fname TEXT, topic TEXT, d TEXT, s TEXT, e TEXT, place TEXT, link TEXT, status TEXT NOT NULL, created INTEGER, updated INTEGER)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS breq (id TEXT PRIMARY KEY, frm TEXT NOT NULL, tow TEXT NOT NULL, fname TEXT, status TEXT NOT NULL, created INTEGER, updated INTEGER)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS breq_tow ON breq (tow, updated)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS breq_frm ON breq (frm, updated)'),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS inv_tow ON inv (tow, updated)'),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS inv_frm ON inv (frm, updated)'),
   ]);
@@ -231,7 +234,7 @@ JSON only, no commentary.`;
   }
 
   /* ---- study buddy invitations: stored readable by the server (needed to notify the other person) ---- */
-  if (url.pathname.startsWith('/bu/') || url.pathname.startsWith('/inv/')) return buddyRoutes(url.pathname, b, env, ip);
+  if (url.pathname.startsWith('/bu/') || url.pathname.startsWith('/inv/') || url.pathname.startsWith('/req/')) return buddyRoutes(url.pathname, b, env, ip);
 
   const id = str(b.id, 64), secret = str(b.secret, 80);
   const dev = id &amp;&amp; secret &amp;&amp; await env.DB.prepare('SELECT * FROM devs WHERE id = ?1').bind(id).first();
@@ -343,6 +346,40 @@ async function buddyRoutes(path, b, env, ip) {
     const who = me.name || 'Your buddy', what = `${row.topic} · ${fmtD(row.d)}, ${row.s} to ${row.e}`;
     const pushed = cancel ? await notifyBuddy(env, row.tow, `${row.fname} cancelled the study room`, what, 'inv-' + id) : await notifyBuddy(env, row.frm, `${who} ${st} your study room`, what, 'inv-' + id);
     return json(env, { ok: true, status: st, pushed });
+  }
+  /* ---- study buddy requests (like follow requests): nobody is added until the other person accepts ---- */
+  if (path === '/req/send') {
+    if (limited(ip, 'reqsend', 30, 3600e3)) return json(env, { error: 'Too many requests. Try again later.' }, 429);
+    const to = str(b.to, 20), id = str(b.id, 40);
+    if (!CODE.test(to) || to === code) return json(env, { error: 'That buddy code is not valid.' }, 400);
+    if (!/^[a-z0-9]{4,40}$/.test(id)) return json(env, { error: 'Bad request id.' }, 400);
+    const rcpt = await env.DB.prepare('SELECT code FROM bu WHERE code = ?1').bind(to).first();
+    if (!rcpt) return json(env, { error: 'Nobody has opened AuraStudent with that buddy code yet. Check the code with your friend.' }, 404);
+    const same = await env.DB.prepare("SELECT status FROM breq WHERE frm = ?1 AND tow = ?2 AND status IN ('pending','accepted') LIMIT 1").bind(code, to).first();
+    if (same) return json(env, { error: same.status === 'pending' ? 'You already sent this person a request. It is still pending.' : 'You are already study buddies.', state: same.status }, 409);
+    const back = await env.DB.prepare("SELECT status FROM breq WHERE frm = ?1 AND tow = ?2 AND status IN ('pending','accepted') LIMIT 1").bind(to, code).first();
+    if (back) return json(env, { error: back.status === 'pending' ? 'This person already sent you a request. Accept it under Buddy requests.' : 'You are already study buddies.', state: 'incoming-' + back.status }, 409);
+    const now = Date.now();
+    const res = await env.DB.prepare("INSERT OR IGNORE INTO breq (id, frm, tow, fname, status, created, updated) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?5)").bind(id, code, to, me.name || 'A classmate', now).run();
+    if (!res || !res.meta || res.meta.changes !== 1) return json(env, { ok: true, duplicate: true });
+    const pushed = await notifyBuddy(env, to, `${me.name || 'A classmate'} sent you a study buddy request`, 'Open Study buddy in AuraStudent to accept or decline.', 'req-' + id);
+    return json(env, { ok: true, pushed });
+  }
+  if (path === '/req/list') {
+    const since = Math.max(0, Math.floor(Number(b.since) || 0));
+    const rows = await env.DB.prepare('SELECT q.*, (SELECT name FROM bu WHERE code = q.tow) AS tname FROM breq q WHERE (q.tow = ?1 OR q.frm = ?1) AND q.updated &gt; ?2 ORDER BY q.updated LIMIT 100').bind(code, since).all();
+    return json(env, { now: Date.now(), reqs: (rows.results || []).map((r) =&gt; ({ id: r.id, from: r.frm, to: r.tow, fromName: r.fname, toName: r.tname || '', status: r.status, updated: r.updated })) });
+  }
+  if (path === '/req/respond' || path === '/req/cancel') {
+    const id = str(b.id, 40), row = await env.DB.prepare('SELECT * FROM breq WHERE id = ?1').bind(id).first();
+    if (!row) return json(env, { error: 'That request no longer exists.' }, 404);
+    const cancel = path === '/req/cancel', st = cancel ? 'cancelled' : (b.status === 'accepted' ? 'accepted' : b.status === 'declined' ? 'declined' : '');
+    if (!st) return json(env, { error: 'Choose accept or decline.' }, 400);
+    if (cancel ? row.frm !== code : row.tow !== code) return json(env, { error: 'You can not change this request.' }, 403);
+    if (row.status !== 'pending') return json(env, { ok: true, status: row.status, unchanged: true });
+    await env.DB.prepare('UPDATE breq SET status = ?2, updated = ?3 WHERE id = ?1').bind(id, st, Date.now()).run();
+    const pushed = cancel ? false : await notifyBuddy(env, row.frm, `${me.name || 'Your buddy'} ${st} your study buddy request`, st === 'accepted' ? 'You are now study buddies. Open Study buddy to plan a room.' : 'They chose not to add you right now.', 'req-' + id);
+    return json(env, { ok: true, status: st, pushed, name: me.name || '' });
   }
   return json(env, { error: 'Not found' }, 404);
 }

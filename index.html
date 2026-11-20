@@ -897,7 +897,8 @@ VIEWS.buddy=()=>{
       <label class="f">Name<input class="in" name="name" required maxlength="60" placeholder="Friend or classmate"></label>
       <fieldset class="f fchoices" style="grid-column:1/-1;border:0;padding:0;margin:0"><legend>Usually free (optional)</legend><div class="fch">${['Mornings','Afternoons','Evenings','Weekdays','Weekends'].map(o=>`<label><input type="checkbox" name="free" value="${o}"><span>${o}</span></label>`).join('')}</div></fieldset>
       <label class="f">Courses together (optional)<input class="in" name="courses" placeholder="Python, Physics (comma separated)"></label>
-      <label class="f">Their buddy code (optional)<input class="in" name="code" maxlength="14" autocomplete="off" placeholder="Needed to send real invitations"></label>
+      <label class="f">Their buddy code (optional)<input class="in" name="code" maxlength="14" autocomplete="off" placeholder="Needed to send a request"></label>
+      <p class="sm muted" style="grid-column:1/-1;margin:0">With a buddy code, pressing Add buddy sends them a request. They join your list only if they accept. Without a code, they are added to your list right away and are not notified.</p>
       <button class="btn pri" style="grid-column:1/-1">${ico('plus',18)}Add buddy</button></form></section>`
   +`<section><h3 style="margin:18px 0 10px">Your study buddies</h3>${S.buddies.length?`<div class="grid3">${mine}</div>`:`<div class="card"><div class="empty"><b>No buddies yet</b>Add someone above, or pick from the suggestions below.</div></div>`}</section>`
   +`<section class="card"><header><h2>Suggested classmates</h2><span class="pill">${m.length}</span></header>
@@ -3576,7 +3577,7 @@ const invWhen=r=>`${fd(r.date)}, ${r.start} to ${r.end}`;
 function invToast(msg){toast(msg);clearTimeout(toastT);toastT=setTimeout(()=>$('#toast').classList.remove('on'),8000)}
 let invNoted=false;
 function invNotify(title,body){
-  invNoted=true;invToast(title+': '+body);
+  invNoted=true;invToast(body?title+': '+body:title);
   try{if(document.hidden&&'Notification' in window&&Notification.permission==='granted'&&!(S.push&&S.push.on))new Notification('AuraStudent · '+title,{body,icon:'icon-192.png',tag:'inv'})}catch(e){}
 }
 const linkOk=l=>/^https?:\/\/\S+$/i.test(l||'');
@@ -3666,8 +3667,9 @@ F.meName=d=>{const n=String(d.get('name')||'').trim().slice(0,40);if(!n)return;M
   if(rawIn&&!code){toast('That buddy code is not valid. It has 10 letters and numbers.');return}
   if(code&&code===ME().code){toast('That is your own code.');return}
   if(code&&(S.buddies||[]).some(b=>b.code===code)){toast('That buddy code is already in your list.');return}
-  const n0=(S.buddies||[]).length;_ba(d);
-  if(S.buddies.length>n0&&code){S.buddies[S.buddies.length-1].code=code;save();render()}
+  if(code){const nm=String(d.get('name')||'').trim();if(!nm){toast('Enter their name.');return}
+    sendBuddyRequest(nm.slice(0,60),code,{when:d.getAll('free').join(', '),courses:splitList(d.get('courses'))});return}
+  _ba(d);
 }}
 /* proposing a room: invite the linked buddies you selected, and only them */
 {const _rs=F.roomSave;F.roomSave=(d,f)=>{
@@ -3693,6 +3695,84 @@ async function roomInvite(room,names){
   show(ok?`Invitation sent to ${ok===room.invs.length?room.invs.map(i=>i.name).join(', '):ok+' of '+room.invs.length}`:'Invitation not sent',ok?'Status: Pending until they accept or decline. You will be told here when they answer.':'The room is on your calendar, but nobody was invited.',rows);
 }
 {const _rd=A.roomDel;A.roomDel=el=>{const r=S.rooms.find(x=>x.id===el.dataset.arg),will=r&&UI.delRoom===r.id;_rd(el);if(will&&r.invs)r.invs.filter(i=>i.status==='pending').forEach(i=>invCall('/inv/cancel',{id:i.id}).catch(()=>{}))}}
+/* ===================== study buddy requests (like follow requests) ===================== */
+const reqIn=()=>S.breqIn=S.breqIn&&typeof S.breqIn==='object'?S.breqIn:{};
+const reqOut=()=>S.breqOut=S.breqOut&&typeof S.breqOut==='object'?S.breqOut:{};
+const hasBuddy=code=>(S.buddies||[]).some(b=>b.code===code);
+function addBuddyFrom(code,name,extra){
+  if(!code||hasBuddy(code))return false;extra=extra||{};S.buddies=S.buddies||[];
+  S.buddies.push({id:'b'+uid(),name:TS.cap(String(name||'Study buddy')).slice(0,60),code,when:extra.when||'',courses:extra.courses||[],interests:[]});return true;
+}
+async function sendBuddyRequest(name,code,extra){
+  if(!invReady()){toast('The AuraStudent server is not set up in this copy of the app.');return}
+  const m=ME();
+  if(!m.name){toast('Add your name under Your buddy code first, so they know who sent the request.');return}
+  if(hasBuddy(code)){toast('This person is already in your buddy list.');return}
+  if(Object.values(reqOut()).some(r=>r.to===code&&r.status==='pending')){toast('You already sent this person a request. It is still pending.');return}
+  if(Object.values(reqIn()).some(r=>r.from===code&&r.status==='pending')){toast('This person already sent you a request. Accept it under Buddy requests.');return}
+  const id=('q'+uid()).toLowerCase().replace(/[^a-z0-9]/g,'');
+  try{
+    await buddyEnsure();
+    const r=await invCall('/req/send',{to:code,id});
+    reqOut()[id]={id,to:code,name,status:'pending',when:extra.when||'',courses:extra.courses||[],updated:Date.now()};save();render();
+    toast(`Request sent to ${name}. It stays Pending until they accept.${r.pushed?'':' They will see it when they open the app.'}`);
+  }catch(e){toast('Could not send the request: '+pushErr(e))}
+}
+async function reqRespond(id,status){
+  const q=reqIn()[id];if(!q||q.status!=='pending')return;
+  try{
+    await buddyEnsure();
+    const r=await invCall('/req/respond',{id,status});
+    q.status=r.status||status;
+    if(r.unchanged){save();render();toast(`This request was already ${q.status}.`);return}
+    if(status==='accepted')addBuddyFrom(q.from,q.fromName,{});
+    save();render();
+    toast(status==='accepted'?`You and ${q.fromName} are now study buddies. ${r.pushed?`${q.fromName} has been notified.`:`${q.fromName} will see it when they open the app.`}`:`Declined. Nobody was added. ${r.pushed?`${q.fromName} has been notified.`:''}`);
+  }catch(e){toast('Could not send your answer: '+pushErr(e)+' Nothing changed. Try again.')}
+}
+async function reqCancel(id){
+  const o=reqOut()[id];if(!o||o.status!=='pending')return;
+  try{const r=await invCall('/req/cancel',{id});o.status=r.status||'cancelled';save();render();toast(r.unchanged?`This request was already ${o.status}.`:'Request cancelled.');
+    if(o.status==='accepted'){addBuddyFrom(o.to,o.name,o);save();render()}}
+  catch(e){toast('Could not cancel: '+pushErr(e))}
+}
+let reqBusy=false;
+async function reqSync(manual){
+  if(!invReady()||reqBusy||!navigator.onLine)return;const m=ME();if(!m.reg)return;
+  reqBusy=true;
+  try{
+    const r=await invCall('/req/list',{since:m.rsince||0});let ch=false;
+    for(const q of r.reqs||[]){
+      m.rsince=Math.max(m.rsince||0,q.updated||0);
+      if(q.to===m.code){
+        const prior=reqIn()[q.id];reqIn()[q.id]={...q};ch=true;
+        if(!prior&&q.status==='pending')invNotify(`${q.fromName} sent you a study buddy request`,'Open Study buddy to accept or decline.');
+        else if(prior&&prior.status==='pending'&&q.status==='cancelled')invNotify(`${q.fromName} cancelled their study buddy request`,'It is no longer waiting for you.');
+      }else if(q.from===m.code){
+        const o=reqOut()[q.id];if(!o||o.status===q.status)continue;
+        o.status=q.status;o.updated=q.updated;ch=true;
+        const nm=q.toName||o.name;
+        if(q.status==='accepted'){addBuddyFrom(q.to,nm,o);invNotify(`${nm} accepted your study buddy request`,'They are now in your study buddy list.')}
+        else if(q.status==='declined')invNotify(`${nm} declined your study buddy request`,'Nobody was added to either list.');
+      }
+    }
+    rawSave();
+    if(ch){save();if(UI.view==='buddy'&&!$('#modal').innerHTML&&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||''))render()}
+  }catch(e){if(manual)toast('Could not check requests: '+pushErr(e))}
+  reqBusy=false;
+}
+{const _is=inviteSync;inviteSync=async function(manual){await _is(manual);await reqSync(manual)}}
+function reqCard(){
+  const inc=Object.values(reqIn()).sort((a,b)=>(b.updated||0)-(a.updated||0)).slice(0,8),out=Object.values(reqOut()).sort((a,b)=>(b.updated||0)-(a.updated||0)).slice(0,8);
+  if(!inc.length&&!out.length)return '';
+  const pend=inc.filter(x=>x.status==='pending').length;
+  return `<section class="card" aria-labelledby="rq-h"><header><h2 id="rq-h">Buddy requests</h2><span class="pill ${pend?'bad':''}">${pend} waiting</span></header>
+  ${inc.map(x=>`<div class="dl" style="align-items:center;gap:10px"><div style="min-width:0"><b>${esc(x.fromName)}</b> wants to be your study buddy<div class="sm muted">Request to you</div></div><div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-end">${x.status==='pending'?`<button class="btn sm pri" data-act="reqAccept" data-arg="${esc(x.id)}">Accept</button><button class="btn sm" data-act="reqDecline" data-arg="${esc(x.id)}">Decline</button>`:statPill(x.status)}</div></div>`).join('')}
+  ${out.map(x=>`<div class="dl" style="align-items:center;gap:10px"><div style="min-width:0">You asked <b>${esc(x.name)}</b> to be your study buddy<div class="sm muted">${x.status==='pending'?'Waiting for them to answer. They are added to your list only if they accept.':x.status==='accepted'?'They accepted and are in your list.':x.status==='declined'?'They declined. Nobody was added.':'You cancelled this request.'}</div></div><div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-end">${statPill(x.status)}${x.status==='pending'?`<button class="btn sm ghost" data-act="reqCancel" data-arg="${esc(x.id)}">Cancel</button>`:''}</div></div>`).join('')}</section>`;
+}
+{const _bt=buddyTop;buddyTop=function(){const h=_bt(),mk='<section class="card" aria-labelledby="inv-h">',mk2='<section class="card" aria-labelledby="bc-h">',rc=reqCard();
+  if(!rc)return h;return h.includes(mk)?h.replace(mk,rc+mk):h.replace(mk2,rc+mk2)}}
+Object.assign(A,{reqAccept:el=>reqRespond(el.dataset.arg,'accepted'),reqDecline:el=>reqRespond(el.dataset.arg,'declined'),reqCancel:el=>reqCancel(el.dataset.arg)});
 
 try{const t=localStorage.getItem(TKEY);if(t)document.documentElement.dataset.theme=t;const v=localStorage.getItem('aurastudent.view');if(v&&VIEWS[v])UI.view=v}catch(e){}
 render();
