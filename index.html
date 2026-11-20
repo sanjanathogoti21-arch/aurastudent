@@ -885,7 +885,7 @@ VIEWS.buddy=()=>{
   const p=S.profile;S.buddies=S.buddies||[];
   const have=new Set(S.buddies.map(b=>b.name.toLowerCase()));
   const m=PEERS.filter(x=>!have.has(x.n.toLowerCase())).map(x=>{const sc=x.c.filter(c=>p.subjects.includes(c)),si=x.i.filter(i=>p.interests.includes(i));return {x,sc,si,pct:Math.min(98,sc.length*28+si.length*18+10)}}).sort((a,b)=>b.pct-a.pct);
-  const mine=S.buddies.map(b=>`<article class="card opp"><div class="top"><div><h3>${esc(b.name)}</h3><span class="pill ok">Added by you</span><div class="sm muted">${b.when?'Usually free: '+esc(b.when):'Free time not added'}</div></div><button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Remove ${esc(b.name)}" data-act="buddyDel" data-arg="${esc(b.id)}">${ico('trash',16)}</button></div>
+  const mine=S.buddies.map(b=>`<article class="card opp"><div class="top"><div><h3>${esc(b.name)}</h3><span class="pill ok">Added by you</span> ${b.code?'<span class="pill ok" title="Real invitations can be sent to this buddy">Linked</span>':'<span class="pill" title="Add their buddy code to send real invitations">Not linked</span>'}<div class="sm muted">${b.when?'Usually free: '+esc(b.when):'Free time not added'}</div></div><button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Remove ${esc(b.name)}" data-act="buddyDel" data-arg="${esc(b.id)}">${ico('trash',16)}</button></div>
     <div class="chips">${(b.courses||[]).map(c=>`<span class="chip match">${esc(c)}</span>`).join('')}${(b.interests||[]).map(c=>`<span class="chip plain">${esc(c)}</span>`).join('')}${!(b.courses||[]).length&&!(b.interests||[]).length?'<span class="sm muted">No courses or interests added.</span>':''}</div>
     <button class="btn sm pri" style="align-self:flex-start;margin-top:auto" data-act="roomOpen" data-arg="${esc(b.name)}">Propose a study room</button></article>`).join('');
   return head('Study buddy','Add the people you study with, and plan quick virtual study rooms.')
@@ -897,6 +897,7 @@ VIEWS.buddy=()=>{
       <label class="f">Name<input class="in" name="name" required maxlength="60" placeholder="Friend or classmate"></label>
       <fieldset class="f fchoices" style="grid-column:1/-1;border:0;padding:0;margin:0"><legend>Usually free (optional)</legend><div class="fch">${['Mornings','Afternoons','Evenings','Weekdays','Weekends'].map(o=>`<label><input type="checkbox" name="free" value="${o}"><span>${o}</span></label>`).join('')}</div></fieldset>
       <label class="f">Courses together (optional)<input class="in" name="courses" placeholder="Python, Physics (comma separated)"></label>
+      <label class="f">Their buddy code (optional)<input class="in" name="code" maxlength="14" autocomplete="off" placeholder="Needed to send real invitations"></label>
       <button class="btn pri" style="grid-column:1/-1">${ico('plus',18)}Add buddy</button></form></section>`
   +`<section><h3 style="margin:18px 0 10px">Your study buddies</h3>${S.buddies.length?`<div class="grid3">${mine}</div>`:`<div class="card"><div class="empty"><b>No buddies yet</b>Add someone above, or pick from the suggestions below.</div></div>`}</section>`
   +`<section class="card"><header><h2>Suggested classmates</h2><span class="pill">${m.length}</span></header>
@@ -904,7 +905,7 @@ VIEWS.buddy=()=>{
     ${m.length?`<div class="grid3">${m.map(({x,sc,si,pct})=>`<article class="card opp"><div class="top"><div><h3>${esc(x.n)}</h3><span class="pill">Suggestion</span><div class="sm muted">Usually free: ${x.when}</div></div><div class="fit"><b class="num">${pct}%</b><div class="meter"><i style="width:${pct}%"></i></div></div></div>
     <div class="chips">${sc.map(c=>`<span class="chip match">${esc(c)}</span>`).join('')}${si.map(c=>`<span class="chip plain">${esc(c)}</span>`).join('')}${!sc.length&&!si.length?'<span class="sm muted">No overlap yet.</span>':''}</div>
     <div class="row" style="gap:8px;margin-top:auto;flex-wrap:wrap"><button class="btn sm" data-act="buddyFromSug" data-arg="${esc(x.n)}">${ico('plus',16)}Add as buddy</button><button class="btn sm ghost" data-act="roomOpen" data-arg="${esc(x.n)}">Propose a study room</button></div></article>`).join('')}</div>`:'<div class="empty"><b>No more suggestions</b>You have added all of them.</div>'}</section>`
-  +`<section class="card"><header><h2>Your study rooms</h2><button class="btn sm pri" data-act="roomNew">${ico('plus',16)}Create a study room</button></header>${(S.rooms.forEach(r=>{if(!r.id)r.id='r'+uid()}),S.rooms.length)?S.rooms.map(r=>`<div class="dl"><div><b>${esc(r.topic)}</b><div class="sm muted">with ${esc(r.who)} · ${esc(r.where)}${/^https?:\/\//i.test(r.link||'')?` · <a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">Open link</a>`:''}</div></div><div class="row" style="gap:10px;align-items:center"><div class="sm num" style="text-align:right">${fd(r.date)}<br>${r.start} to ${r.end}</div>${UI.delRoom===r.id?`<button class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)" data-act="roomDel" data-arg="${esc(r.id)}">Remove?</button><button class="btn sm ghost" data-act="roomDelCancel">Keep</button>`:`<button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Remove study room ${esc(r.topic)}" data-act="roomDel" data-arg="${esc(r.id)}">${ico('trash',16)}</button>`}</div></div>`).join(''):`<div class="empty"><b>No rooms yet</b>Press Create a study room, or pick one of your buddies above to plan one.</div>`}</section>`;
+  +`<section class="card"><header><h2>Your study rooms</h2><button class="btn sm pri" data-act="roomNew">${ico('plus',16)}Create a study room</button></header>${(S.rooms.forEach(r=>{if(!r.id)r.id='r'+uid()}),S.rooms.length)?S.rooms.map(r=>`<div class="dl"><div><b>${esc(r.topic)}</b><div class="sm muted">with ${esc(r.who)} · ${esc(r.where)}${/^https?:\/\//i.test(r.link||'')?` · <a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">Open link</a>`:''}</div>${roomInvChips(r)}</div><div class="row" style="gap:10px;align-items:center"><div class="sm num" style="text-align:right">${fd(r.date)}<br>${r.start} to ${r.end}</div>${UI.delRoom===r.id?`<button class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)" data-act="roomDel" data-arg="${esc(r.id)}">Remove?</button><button class="btn sm ghost" data-act="roomDelCancel">Keep</button>`:`<button class="btn sm ghost icon-btn" style="width:34px;height:34px" aria-label="Remove study room ${esc(r.topic)}" data-act="roomDel" data-arg="${esc(r.id)}">${ico('trash',16)}</button>`}</div></div>`).join(''):`<div class="empty"><b>No rooms yet</b>Press Create a study room, or pick one of your buddies above to plan one.</div>`}</section>`;
 };
 
 function buddyResults(q){
@@ -3545,6 +3546,153 @@ document.addEventListener('change',e=>{const el=e.target;if(!el||!el.dataset)ret
     if(!TS.saveNow()){S.tasks.pop();render();toast("Could not save: storage is full or blocked");return}
     save();render();toast(`Added to ${CATL[t.cat]}`)}
 }}
+
+/* ===================== study room invitations (real, through the AuraStudent server) ===================== */
+const BC_ALPHA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const bcode=v=>{const c=String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');return /^[A-Z2-9]{10}$/.test(c)?c:''};
+const bshow=c=>c?c.slice(0,5)+'-'+c.slice(5):'';
+function ME(){
+  S.me=S.me&&typeof S.me==='object'?S.me:{};const m=S.me;
+  if(!bcode(m.code)){const r=crypto.getRandomValues(new Uint8Array(10));m.code=[...r].map(x=>BC_ALPHA[x%BC_ALPHA.length]).join('');m.reg=false}
+  if(!m.secret||m.secret.length<16)m.secret=u8ToB64u(crypto.getRandomValues(new Uint8Array(24)));
+  if(typeof m.name!=='string')m.name=(S.account&&S.account.name||'').split(' ')[0]||'';
+  S.invIn=S.invIn&&typeof S.invIn==='object'?S.invIn:{};m.since=m.since||0;
+  return m;
+}
+const invReady=()=>!/REPLACE_WITH/.test(PUSH_SERVER);
+const invCall=(path,extra)=>{const m=ME();return pushApi(path,{code:m.code,secret:m.secret,...extra})};
+let buddyRegBusy=null;
+function buddyEnsure(force){
+  const m=ME();if(m.reg&&!force)return Promise.resolve();
+  if(buddyRegBusy)return buddyRegBusy;
+  buddyRegBusy=(async()=>{
+    let sub=null;try{if('serviceWorker' in navigator&&'Notification' in window&&Notification.permission==='granted'){const reg=await Promise.race([navigator.serviceWorker.ready,new Promise(r=>setTimeout(()=>r(null),3000))]);const s=reg&&await reg.pushManager.getSubscription();if(s)sub=s.toJSON()}}catch(e){}
+    const r=await pushApi('/bu/register',{code:m.code,secret:m.secret,name:m.name||'A classmate',sub});
+    m.reg=true;m.pushOn=!!r.push;rawSave();
+  })().finally(()=>{buddyRegBusy=null});
+  return buddyRegBusy;
+}
+const invWhen=r=>`${fd(r.date)}, ${r.start} to ${r.end}`;
+function invToast(msg){toast(msg);clearTimeout(toastT);toastT=setTimeout(()=>$('#toast').classList.remove('on'),8000)}
+let invNoted=false;
+function invNotify(title,body){
+  invNoted=true;invToast(title+': '+body);
+  try{if(document.hidden&&'Notification' in window&&Notification.permission==='granted'&&!(S.push&&S.push.on))new Notification('AuraStudent · '+title,{body,icon:'icon-192.png',tag:'inv'})}catch(e){}
+}
+const linkOk=l=>/^https?:\/\/\S+$/i.test(l||'');
+function addAcceptedRoom(rec){
+  if(S.rooms.some(x=>x.fromInv===rec.id))return;
+  const r={id:'r'+uid(),topic:rec.topic,who:rec.fromName,date:rec.date,start:rec.start,end:rec.end,where:rec.place,fromInv:rec.id};if(linkOk(rec.link))r.link=rec.link;
+  const ev={id:'e'+uid(),title:`Study room: ${r.topic} with ${r.who}`,type:'study',date:r.date,start:r.start,end:r.end,loc:r.where};r.eid=ev.id;
+  S.rooms.push(r);S.events.push(ev);
+}
+let invSyncBusy=false;
+async function inviteSync(manual){
+  if(!invReady()||invSyncBusy||!navigator.onLine)return;
+  const m=ME();if(!m.reg){if(!manual)return;try{await buddyEnsure()}catch(e){return}}
+  invSyncBusy=true;invNoted=false;
+  try{
+    const r=await invCall('/inv/list',{since:m.since});let changed=false;
+    for(const inv of r.invs||[]){
+      m.since=Math.max(m.since,inv.updated||0);
+      if(inv.to===m.code){
+        const prior=S.invIn[inv.id];S.invIn[inv.id]={...inv};changed=true;
+        if(!prior&&inv.status==='pending')invNotify(`${inv.fromName} invited you to a study room`,`${inv.topic} · ${invWhen(inv)} · ${inv.place}${linkOk(inv.link)?' · '+inv.link:''}`);
+        else if(prior&&prior.status==='pending'&&inv.status==='cancelled')invNotify(`${inv.fromName} cancelled a study room`,`${inv.topic} · ${invWhen(inv)}`);
+      }else if(inv.from===m.code){
+        const room=S.rooms.find(x=>(x.invs||[]).some(i=>i.id===inv.id));if(!room)continue;
+        const i=room.invs.find(x=>x.id===inv.id);
+        if(i.status!==inv.status){
+          const was=i.status;i.status=inv.status;changed=true;
+          if(inv.status==='accepted'||inv.status==='declined'){
+            invNotify(`${i.name} ${inv.status} your study room`,`${room.topic} · ${invWhen(room)}`);
+            if(inv.status==='declined'&&room.invs.every(x=>x.status==='declined')){S.events=S.events.filter(e=>e.id!==room.eid)}
+          }
+        }
+      }
+    }
+    if(changed||(r.invs||[]).length){rawSave();save();if(UI.view==='buddy'&&!$('#modal').innerHTML&&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||''))render()}
+    else rawSave();
+    if(manual&&!invNoted)toast(changed?'Invitations updated':'No new invitations');
+  }catch(e){if(manual)toast('Could not check invitations: '+pushErr(e))}
+  invSyncBusy=false;
+}
+setInterval(()=>{if(!document.hidden)inviteSync(false)},45000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)inviteSync(false)});
+setTimeout(()=>inviteSync(false),2500);
+async function invRespond(id,status){
+  const rec=(S.invIn||{})[id];if(!rec||rec.status!=='pending')return;
+  try{
+    await buddyEnsure();
+    const r=await invCall('/inv/respond',{id,status});
+    rec.status=r.status||status;
+    if(r.unchanged){save();render();toast(`This invitation was already ${rec.status}.`);return}
+    if(status==='accepted')addAcceptedRoom(rec);
+    save();render();
+    toast(status==='accepted'?`Accepted. ${rec.topic} is on your schedule${r.pushed?`, and ${rec.fromName} has been notified.`:`. ${rec.fromName} will see it when they open the app.`}`:`Declined. ${r.pushed?`${rec.fromName} has been notified.`:`${rec.fromName} will see it when they open the app.`}`);
+  }catch(e){toast('Could not send your answer: '+pushErr(e)+' Nothing changed. Try again.')}
+}
+const STAT_L={pending:'Pending',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',sending:'Sending',failed:'Not sent'};
+const statPill=s=>`<span class="pill ${s==='accepted'?'ok':s==='declined'||s==='failed'?'bad':''}">${STAT_L[s]||s}</span>`;
+function roomInvChips(r){
+  if(r.fromInv)return `<div class="sm" style="margin-top:4px">${statPill('accepted')} You accepted this invitation from ${esc(r.who)}</div>`;
+  if(!r.invs||!r.invs.length)return '';
+  return `<div class="sm" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">${r.invs.map(i=>`<span>${esc(i.name)} ${statPill(i.status)}</span>`).join('')}</div>`+(r.invs.some(i=>i.status==='failed')?`<div class="sm muted">${esc(r.invs.find(i=>i.status==='failed').err||'')}</div>`:'');
+}
+function buddyTop(){
+  const m=ME(),inc=Object.values(S.invIn||{}).sort((a,b)=>(b.updated||0)-(a.updated||0)).slice(0,8),pend=inc.filter(x=>x.status==='pending').length;
+  const incCard=inc.length?`<section class="card" aria-labelledby="inv-h"><header><h2 id="inv-h">Study room invitations</h2><span class="pill ${pend?'bad':''}">${pend} waiting</span></header>${inc.map(x=>`<div class="dl" style="align-items:flex-start;gap:10px"><div style="min-width:0"><b>${esc(x.fromName)}</b> invited you to <b>${esc(x.topic)}</b><div class="sm muted">${esc(invWhen(x))} · ${esc(x.place)}${linkOk(x.link)?` · <a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer">Open link</a>`:''}</div></div><div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-end">${x.status==='pending'?`<button class="btn sm pri" data-act="invAccept" data-arg="${esc(x.id)}">Accept</button><button class="btn sm" data-act="invDecline" data-arg="${esc(x.id)}">Decline</button>`:statPill(x.status)}</div></div>`).join('')}</section>`:'';
+  const ready=invReady();
+  const codeCard=`<section class="card" aria-labelledby="bc-h"><header><h2 id="bc-h">Your buddy code</h2><span class="pill ${m.reg?'ok':''}">${m.reg?'Connected':ready?'Not connected yet':'Server not set up'}</span></header>
+   <p class="sm muted">Give this code to a friend. When they add it as your buddy, you can send each other real study room invitations. Invitations are only delivered to the buddy you choose.</p>
+   <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px"><b class="num" style="font-size:22px;letter-spacing:.08em" id="mycode">${bshow(m.code)}</b><button class="btn sm" data-act="codeCopy">Copy code</button><button class="btn sm ghost" data-act="invCheck">Check for invitations</button></div>
+   <form data-form="meName" class="row" style="gap:8px;margin-top:10px;align-items:end;flex-wrap:wrap"><label class="f" style="flex:1;min-width:180px">Your name, shown to your buddy<input class="in" name="name" required maxlength="40" value="${esc(m.name)}" placeholder="Your first name"></label><button class="btn">Save name</button></form>
+   <p class="sm faint" style="margin-top:8px">${m.reg&&m.pushOn?'Phone alerts for invitations are on.':'To also get invitations as phone notifications, turn on alerts under Profile. Otherwise you will see them here and when you open the app.'} The invitation details (subject, time, place, link) are stored on the AuraStudent server so your buddy can receive them.</p></section>`;
+  return incCard+codeCard;
+}
+{const _vb=VIEWS.buddy;VIEWS.buddy=()=>{const h=_vb(),mk='<section class="card"><header><h2>Find people to add</h2>';
+  try{if(invReady()&&!ME().reg)buddyEnsure().then(()=>{if(UI.view==='buddy'&&!$('#modal').innerHTML&&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||''))render();inviteSync(false)}).catch(()=>{})}catch(e){}
+  return h.includes(mk)?h.replace(mk,buddyTop()+mk):h}}
+Object.assign(A,{
+  invAccept:el=>invRespond(el.dataset.arg,'accepted'),
+  invDecline:el=>invRespond(el.dataset.arg,'declined'),
+  invCheck:()=>inviteSync(true),
+  codeCopy:()=>{const c=bshow(ME().code);(navigator.clipboard?navigator.clipboard.writeText(c):Promise.reject()).then(()=>toast('Code copied'),()=>toast('Copy this code by hand: '+c))}
+});
+F.meName=d=>{const n=String(d.get('name')||'').trim().slice(0,40);if(!n)return;ME().name=n;S.me.reg=false;save();buddyEnsure(true).then(()=>{toast('Name saved');render()}).catch(e=>toast('Saved on this device. Could not tell the server: '+pushErr(e)))};
+/* adding a buddy by code */
+{const _ba=F.buddyAdd;F.buddyAdd=d=>{
+  const rawIn=String(d.get('code')||'').trim(),code=bcode(rawIn);
+  if(rawIn&&!code){toast('That buddy code is not valid. It has 10 letters and numbers.');return}
+  if(code&&code===ME().code){toast('That is your own code.');return}
+  if(code&&(S.buddies||[]).some(b=>b.code===code)){toast('That buddy code is already in your list.');return}
+  const n0=(S.buddies||[]).length;_ba(d);
+  if(S.buddies.length>n0&&code){S.buddies[S.buddies.length-1].code=code;save();render()}
+}}
+/* proposing a room: invite the linked buddies you selected, and only them */
+{const _rs=F.roomSave;F.roomSave=(d,f)=>{
+  const names=f.dataset.who?[f.dataset.who]:d.getAll('mem'),n0=S.rooms.length;_rs(d,f);
+  if(S.rooms.length>n0)roomInvite(S.rooms[S.rooms.length-1],names);
+}}
+async function roomInvite(room,names){
+  const linked=names.map(n=>(S.buddies||[]).find(b=>b.name===n&&b.code)).filter(Boolean),unlinked=names.filter(n=>!linked.some(b=>b.name===n));
+  if(!linked.length)return;
+  const m=ME();
+  const show=(title,sub,rows)=>modal(`${mh(title,sub)}<div style="margin:6px 0 14px">${rows}</div><div class="row"><button class="btn pri" data-act="closeModal">Done</button></div>`);
+  if(!invReady()){show('Room added to your calendar','Nothing has been sent: the AuraStudent server is not set up in this copy of the app.','');return}
+  if(!m.name){show('Room added to your calendar','Nothing has been sent yet. Add your name under Your buddy code so your buddy knows who invited them, then propose the room again.','');return}
+  room.invs=linked.map(b=>({id:('i'+uid()).toLowerCase().replace(/[^a-z0-9]/g,''),to:b.code,name:b.name,status:'sending'}));save();render();
+  show('Sending invitation...','','');
+  try{await buddyEnsure()}catch(e){room.invs.forEach(i=>{i.status='failed';i.err=pushErr(e)})}
+  for(const i of room.invs){if(i.status!=='sending')continue;
+    try{const r=await invCall('/inv/send',{to:i.to,id:i.id,topic:room.topic,date:room.date,start:room.start,end:room.end,place:room.where,link:room.link||''});i.status='pending';i.pushed=!!r.pushed}
+    catch(e){i.status='failed';i.err=pushErr(e)}}
+  rawSave();save();render();
+  const rows=room.invs.map(i=>`<div class="row" style="justify-content:space-between;gap:10px;padding:4px 0"><span>${esc(i.name)}</span><span>${statPill(i.status)}</span></div>${i.status==='failed'?`<div class="sm" style="color:var(--bad)">${esc(i.err||'')}</div>`:i.pushed===false?'<div class="sm muted">They will see it when they open the app, because their phone alerts are not on.</div>':''}`).join('')+(unlinked.length?`<p class="sm muted" style="margin-top:8px">${esc(unlinked.join(', '))} ${unlinked.length>1?'are':'is'} not linked by buddy code, so nothing was sent to ${unlinked.length>1?'them':'them'}.</p>`:'');
+  const ok=room.invs.filter(i=>i.status==='pending').length;
+  show(ok?`Invitation sent to ${ok===room.invs.length?room.invs.map(i=>i.name).join(', '):ok+' of '+room.invs.length}`:'Invitation not sent',ok?'Status: Pending until they accept or decline. You will be told here when they answer.':'The room is on your calendar, but nobody was invited.',rows);
+}
+{const _rd=A.roomDel;A.roomDel=el=>{const r=S.rooms.find(x=>x.id===el.dataset.arg),will=r&&UI.delRoom===r.id;_rd(el);if(will&&r.invs)r.invs.filter(i=>i.status==='pending').forEach(i=>invCall('/inv/cancel',{id:i.id}).catch(()=>{}))}}
 
 try{const t=localStorage.getItem(TKEY);if(t)document.documentElement.dataset.theme=t;const v=localStorage.getItem('aurastudent.view');if(v&&VIEWS[v])UI.view=v}catch(e){}
 render();

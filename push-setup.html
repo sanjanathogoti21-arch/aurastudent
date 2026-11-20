@@ -63,6 +63,10 @@ async function ensure(env) {
     env.DB.prepare('CREATE TABLE IF NOT EXISTS alerts2 (sid TEXT NOT NULL, seq TEXT NOT NULL, at INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY (sid, seq))'),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS alerts2_at ON alerts2 (at)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS docs (k TEXT PRIMARY KEY, rev INTEGER NOT NULL, body TEXT NOT NULL, updated INTEGER)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS bu (code TEXT PRIMARY KEY, sec TEXT NOT NULL, name TEXT, endpoint TEXT, p256dh TEXT, auth TEXT, updated INTEGER)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS inv (id TEXT PRIMARY KEY, frm TEXT NOT NULL, tow TEXT NOT NULL, fname TEXT, topic TEXT, d TEXT, s TEXT, e TEXT, place TEXT, link TEXT, status TEXT NOT NULL, created INTEGER, updated INTEGER)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS inv_tow ON inv (tow, updated)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS inv_frm ON inv (frm, updated)'),
   ]);
   ready = true;
 }
@@ -226,6 +230,9 @@ JSON only, no commentary.`;
     return json(env, { id });
   }
 
+  /* ---- study buddy invitations: stored readable by the server (needed to notify the other person) ---- */
+  if (url.pathname.startsWith('/bu/') || url.pathname.startsWith('/inv/')) return buddyRoutes(url.pathname, b, env, ip);
+
   const id = str(b.id, 64), secret = str(b.secret, 80);
   const dev = id &amp;&amp; secret &amp;&amp; await env.DB.prepare('SELECT * FROM devs WHERE id = ?1').bind(id).first();
   if (!dev || dev.sec !== await sha(secret)) return json(env, { error: 'Unknown device. Turn alerts off and on again.' }, 404);
@@ -250,6 +257,93 @@ JSON only, no commentary.`;
     return r.ok ? json(env, { ok: true }) : json(env, { error: 'The push service answered ' + r.status + '.' }, 502);
   }
   if (url.pathname === '/unregister') { await removeDev(env, id); return json(env, { ok: true }); }
+  return json(env, { error: 'Not found' }, 404);
+}
+
+/* RFC 8291: encrypt a notification for one browser using the keys it registered. */
+async function encPush(p256dh, auth, plain) {
+  const ua = b64u.dec(p256dh), au = b64u.dec(auth);
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+  const uaKey = await crypto.subtle.importKey('raw', ua, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const secret = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, kp.privateKey, 256));
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hk = async (sl, ikm, info, len) =&gt; new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: sl, info }, await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']), len * 8));
+  const ikm = await hk(au, secret, cat(enc.encode('WebPush: info\0'), ua, asPub), 32);
+  const cek = await hk(salt, ikm, enc.encode('Content-Encoding: aes128gcm\0'), 16), nonce = await hk(salt, ikm, enc.encode('Content-Encoding: nonce\0'), 12);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']), cat(enc.encode(plain), new Uint8Array([2]))));
+  return cat(salt, new Uint8Array([0, 0, 16, 0]), new Uint8Array([asPub.length]), asPub, ct);
+}
+async function notifyBuddy(env, code, title, body, tag) {
+  try {
+    const u = await env.DB.prepare('SELECT endpoint, p256dh, auth FROM bu WHERE code = ?1').bind(code).first();
+    if (!u || !u.endpoint || !u.p256dh || !u.auth) return false;
+    const r = await sendRaw(u.endpoint, await encPush(u.p256dh, u.auth, JSON.stringify({ title, body, tag })), env);
+    if (r.status === 404 || r.status === 410) await env.DB.prepare('UPDATE bu SET endpoint = NULL, p256dh = NULL, auth = NULL WHERE code = ?1').bind(code).run();
+    return r.ok;
+  } catch { return false; }
+}
+const CODE = /^[A-Z2-9]{10}$/;
+const clean = (v, n) =&gt; str(v, n).replace(/[&lt;&gt;\u0000-\u001f]/g, '').trim();
+const fmtD = (d) =&gt; { const t = new Date(d + 'T00:00:00Z'); return isNaN(t) ? d : t.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }); };
+const rowOut = (r) =&gt; ({ id: r.id, from: r.frm, to: r.tow, fromName: r.fname, topic: r.topic, date: r.d, start: r.s, end: r.e, place: r.place, link: r.link, status: r.status, updated: r.updated });
+async function buddyRoutes(path, b, env, ip) {
+  const code = str(b.code, 20), secret = str(b.secret, 80);
+  if (!CODE.test(code) || secret.length &lt; 16) return json(env, { error: 'Bad buddy code.' }, 400);
+  const sec = await sha(secret);
+  const me = await env.DB.prepare('SELECT * FROM bu WHERE code = ?1').bind(code).first();
+  if (path === '/bu/register') {
+    if (me &amp;&amp; me.sec !== sec) return json(env, { error: 'This buddy code belongs to someone else. Make a new one in the app.' }, 403);
+    if (!me) {
+      if (limited(ip, 'newbu', 20, 3600e3)) return json(env, { error: 'Too many new buddy codes from this network. Try later.' }, 429);
+      const n = await env.DB.prepare('SELECT COUNT(*) AS c FROM bu').first();
+      if (n &amp;&amp; n.c &gt;= LIMITS.subs) return json(env, { error: 'The server is full right now.' }, 503);
+    }
+    const name = clean(b.name, 40) || 'A classmate';
+    let ep = null, p = null, a = null;
+    const s = b.sub;
+    if (s &amp;&amp; typeof s === 'object') {
+      const e = str(s.endpoint, 2048); let host = ''; try { host = new URL(e).hostname; } catch {}
+      if (/^https:\/\//.test(e) &amp;&amp; PUSH_HOST.test(host) &amp;&amp; s.keys &amp;&amp; typeof s.keys.p256dh === 'string' &amp;&amp; typeof s.keys.auth === 'string' &amp;&amp; s.keys.p256dh.length &lt; 200 &amp;&amp; s.keys.auth.length &lt; 60) { ep = e; p = s.keys.p256dh; a = s.keys.auth; }
+    }
+    if (me) await env.DB.prepare('UPDATE bu SET name = ?2, endpoint = COALESCE(?3, endpoint), p256dh = COALESCE(?4, p256dh), auth = COALESCE(?5, auth), updated = ?6 WHERE code = ?1').bind(code, name, ep, p, a, Date.now()).run();
+    else await env.DB.prepare('INSERT INTO bu (code, sec, name, endpoint, p256dh, auth, updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)').bind(code, sec, name, ep, p, a, Date.now()).run();
+    return json(env, { ok: true, push: !!(ep || (me &amp;&amp; me.endpoint)) });
+  }
+  if (!me || me.sec !== sec) return json(env, { error: 'Your buddy code is not registered yet. Open Study buddy and try again.' }, 404);
+  if (path === '/inv/send') {
+    if (limited(ip, 'invsend', 30, 3600e3)) return json(env, { error: 'Too many invitations. Try again later.' }, 429);
+    const to = str(b.to, 20), id = str(b.id, 40);
+    if (!CODE.test(to) || to === code) return json(env, { error: 'That buddy code is not valid.' }, 400);
+    if (!/^[a-z0-9]{4,40}$/.test(id)) return json(env, { error: 'Bad invitation id.' }, 400);
+    const topic = clean(b.topic, 80), d = str(b.date, 10), st = str(b.start, 5), en = str(b.end, 5), place = clean(b.place, 60);
+    let link = str(b.link, 300); if (link &amp;&amp; !/^https?:\/\/\S+$/i.test(link)) return json(env, { error: 'The meeting link must start with http:// or https://.' }, 400); link = link.replace(/[&lt;&gt;\u0000-\u001f]/g, '');
+    if (!topic || !/^\d{4}-\d{2}-\d{2}$/.test(d) || !/^\d{2}:\d{2}$/.test(st) || !/^\d{2}:\d{2}$/.test(en) || !place) return json(env, { error: 'The invitation is missing its subject, date, time or place.' }, 400);
+    const rcpt = await env.DB.prepare('SELECT code FROM bu WHERE code = ?1').bind(to).first();
+    if (!rcpt) return json(env, { error: 'Nobody has opened AuraStudent with that buddy code yet. Check the code with your friend.' }, 404);
+    const now = Date.now();
+    const res = await env.DB.prepare('INSERT OR IGNORE INTO inv (id, frm, tow, fname, topic, d, s, e, place, link, status, created, updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \'pending\', ?11, ?11)').bind(id, code, to, me.name || 'A classmate', topic, d, st, en, place, link, now).run();
+    if (!res || !res.meta || res.meta.changes !== 1) return json(env, { ok: true, duplicate: true });
+    const pushed = await notifyBuddy(env, to, `${me.name || 'A classmate'} invited you to a study room`, `${topic} · ${fmtD(d)}, ${st} to ${en} · ${place}${link ? ' · ' + link : ''}`, 'inv-' + id);
+    return json(env, { ok: true, pushed });
+  }
+  if (path === '/inv/list') {
+    const since = Math.max(0, Math.floor(Number(b.since) || 0));
+    const rows = await env.DB.prepare('SELECT * FROM inv WHERE (tow = ?1 OR frm = ?1) AND updated &gt; ?2 ORDER BY updated LIMIT 100').bind(code, since).all();
+    return json(env, { now: Date.now(), invs: (rows.results || []).map(rowOut) });
+  }
+  if (path === '/inv/respond' || path === '/inv/cancel') {
+    const id = str(b.id, 40), row = await env.DB.prepare('SELECT * FROM inv WHERE id = ?1').bind(id).first();
+    if (!row) return json(env, { error: 'That invitation no longer exists.' }, 404);
+    const cancel = path === '/inv/cancel', st = cancel ? 'cancelled' : (b.status === 'accepted' ? 'accepted' : b.status === 'declined' ? 'declined' : '');
+    if (!st) return json(env, { error: 'Choose accept or decline.' }, 400);
+    if (cancel ? row.frm !== code : row.tow !== code) return json(env, { error: 'You can not change this invitation.' }, 403);
+    if (row.status !== 'pending') return json(env, { ok: true, status: row.status, unchanged: true });
+    await env.DB.prepare('UPDATE inv SET status = ?2, updated = ?3 WHERE id = ?1').bind(id, st, Date.now()).run();
+    const who = me.name || 'Your buddy', what = `${row.topic} · ${fmtD(row.d)}, ${row.s} to ${row.e}`;
+    const pushed = cancel ? await notifyBuddy(env, row.tow, `${row.fname} cancelled the study room`, what, 'inv-' + id) : await notifyBuddy(env, row.frm, `${who} ${st} your study room`, what, 'inv-' + id);
+    return json(env, { ok: true, status: st, pushed });
+  }
   return json(env, { error: 'Not found' }, 404);
 }
 
