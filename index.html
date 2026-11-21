@@ -3567,7 +3567,7 @@ function buddyEnsure(force){
   const m=ME();if(m.reg&&!force)return Promise.resolve();
   if(buddyRegBusy)return buddyRegBusy;
   buddyRegBusy=(async()=>{
-    let sub=null;try{if('serviceWorker' in navigator&&'Notification' in window&&Notification.permission==='granted'){const reg=await Promise.race([navigator.serviceWorker.ready,new Promise(r=>setTimeout(()=>r(null),3000))]);const s=reg&&await reg.pushManager.getSubscription();if(s)sub=s.toJSON()}}catch(e){}
+    let sub=null;m.pushEp='';try{if('serviceWorker' in navigator&&'Notification' in window&&Notification.permission==='granted'){const reg=await Promise.race([navigator.serviceWorker.ready,new Promise(r=>setTimeout(()=>r(null),3000))]);const s=reg&&await reg.pushManager.getSubscription();if(s){sub=s.toJSON();m.pushEp=s.endpoint}}}catch(e){}
     const r=await pushApi('/bu/register',{code:m.code,secret:m.secret,name:m.name||'A classmate',sub});
     m.reg=true;m.pushOn=!!r.push;rawSave();
   })().finally(()=>{buddyRegBusy=null});
@@ -3576,9 +3576,23 @@ function buddyEnsure(force){
 const invWhen=r=>`${fd(r.date)}, ${r.start} to ${r.end}`;
 function invToast(msg){toast(msg);clearTimeout(toastT);toastT=setTimeout(()=>$('#toast').classList.remove('on'),8000)}
 let invNoted=false;
-function invNotify(title,body){
+/* own AudioContext, unlocked by the first tap/key, so Study buddy alerts can chime even when no reminder is due */
+let NAC=null;
+function nacUnlock(){try{if(!NAC){const C=window.AudioContext||window.webkitAudioContext;if(C)NAC=new C()}if(NAC&&NAC.state==='suspended')NAC.resume()}catch(e){}}
+['pointerdown','keydown','touchstart'].forEach(ev=>document.addEventListener(ev,nacUnlock,{passive:true}));
+const NSND={request:[[660,.0],[880,.14]],invite:[[523,0],[659,.12],[784,.24]],accepted:[[784,0],[988,.11],[1319,.22]],declined:[[440,0],[330,.15]],cancelled:[[440,0],[330,.15]]};
+function playNotifSound(kind){
+  try{if(!(S.notif&&S.notif.sound))return false;nacUnlock();if(!NAC||NAC.state!=='running')return false;
+    const seq=NSND[kind]||NSND.request,t0=NAC.currentTime+.02;
+    for(const [f,d] of seq){const o=NAC.createOscillator(),g=NAC.createGain();o.type='sine';o.frequency.value=f;o.connect(g);g.connect(NAC.destination);
+      g.gain.setValueAtTime(.0001,t0+d);g.gain.exponentialRampToValueAtTime(.22,t0+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t0+d+.2);o.start(t0+d);o.stop(t0+d+.22)}
+    return true}catch(e){return false}
+}
+function invNotify(title,body,kind){
   invNoted=true;invToast(body?title+': '+body:title);
-  try{if(document.hidden&&'Notification' in window&&Notification.permission==='granted'&&!(S.push&&S.push.on))new Notification('AuraStudent · '+title,{body,icon:'icon-192.png',tag:'inv'})}catch(e){}
+  playNotifSound(kind||'request');
+  try{if(navigator.vibrate&&!document.hidden&&S.notif&&S.notif.sound)navigator.vibrate(kind==='declined'||kind==='cancelled'?[120]:[120,80,160])}catch(e){}
+  try{if(document.hidden&&'Notification' in window&&Notification.permission==='granted'&&!(S.push&&S.push.on&&ME().pushOn))new Notification('AuraStudent · '+title,{body,icon:'icon-192.png',tag:'inv-'+(kind||'x')})}catch(e){}
 }
 const linkOk=l=>/^https?:\/\/\S+$/i.test(l||'');
 function addAcceptedRoom(rec){
@@ -3587,40 +3601,73 @@ function addAcceptedRoom(rec){
   const ev={id:'e'+uid(),title:`Study room: ${r.topic} with ${r.who}`,type:'study',date:r.date,start:r.start,end:r.end,loc:r.where};r.eid=ev.id;
   S.rooms.push(r);S.events.push(ev);
 }
-let invSyncBusy=false;
+let invSyncBusy=false,invSyncAgain=false,pollOld=false;
+async function pollBoth(m){
+  if(!pollOld){try{const r=await invCall('/bu/poll',{since:m.since,rsince:m.rsince||0});return r}catch(e){if(!/not found|404/i.test(String(e&&e.message||e)))throw e;pollOld=true}}
+  const [a,b]=await Promise.all([invCall('/inv/list',{since:m.since}),invCall('/req/list',{since:m.rsince||0})]);return {invs:a.invs||[],reqs:b.reqs||[]};
+}
 async function inviteSync(manual){
-  if(!invReady()||invSyncBusy||!navigator.onLine)return;
+  if(!invReady()||!navigator.onLine)return;
+  if(invSyncBusy){invSyncAgain=true;return}
   const m=ME();if(!m.reg){if(!manual)return;try{await buddyEnsure()}catch(e){return}}
   invSyncBusy=true;invNoted=false;
   try{
-    const r=await invCall('/inv/list',{since:m.since});let changed=false;
+    const r=await pollBoth(m);let changed=false;
     for(const inv of r.invs||[]){
       m.since=Math.max(m.since,inv.updated||0);
       if(inv.to===m.code){
         const prior=S.invIn[inv.id];S.invIn[inv.id]={...inv};changed=true;
-        if(!prior&&inv.status==='pending')invNotify(`${inv.fromName} invited you to a study room`,`${inv.topic} · ${invWhen(inv)} · ${inv.place}${linkOk(inv.link)?' · '+inv.link:''}`);
-        else if(prior&&prior.status==='pending'&&inv.status==='cancelled')invNotify(`${inv.fromName} cancelled a study room`,`${inv.topic} · ${invWhen(inv)}`);
+        if(!prior&&inv.status==='pending')invNotify(`Study room invitation from ${inv.fromName}`,`${inv.topic} · ${invWhen(inv)} · ${inv.place}${linkOk(inv.link)?' · '+inv.link:''}`,'invite');
+        else if(prior&&prior.status==='pending'&&inv.status==='cancelled')invNotify(`${inv.fromName} cancelled a study room invitation`,`${inv.topic} · ${invWhen(inv)}`,'cancelled');
       }else if(inv.from===m.code){
         const room=S.rooms.find(x=>(x.invs||[]).some(i=>i.id===inv.id));if(!room)continue;
         const i=room.invs.find(x=>x.id===inv.id);
         if(i.status!==inv.status){
           const was=i.status;i.status=inv.status;changed=true;
           if(inv.status==='accepted'||inv.status==='declined'){
-            invNotify(`${i.name} ${inv.status} your study room`,`${room.topic} · ${invWhen(room)}`);
+            invNotify(`${i.name} ${inv.status} your study room invitation`,`${room.topic} · ${invWhen(room)}`,inv.status);
             if(inv.status==='declined'&&room.invs.every(x=>x.status==='declined')){S.events=S.events.filter(e=>e.id!==room.eid)}
           }
         }
       }
     }
+    try{reqApply(r.reqs||[])}catch(e){}
     if(changed||(r.invs||[]).length){rawSave();save();if(UI.view==='buddy'&&!$('#modal').innerHTML&&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||''))render()}
     else rawSave();
     if(manual&&!invNoted)toast(changed?'Invitations updated':'No new invitations');
   }catch(e){if(manual)toast('Could not check invitations: '+pushErr(e))}
   invSyncBusy=false;
+  if(invSyncAgain){invSyncAgain=false;setTimeout(()=>inviteSync(false),50)}
 }
-setInterval(()=>{if(!document.hidden)inviteSync(false)},45000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)inviteSync(false)});
-setTimeout(()=>inviteSync(false),2500);
+/* adaptive polling: fast while Study buddy is open or something is waiting, slower otherwise; push (below) makes it instant */
+function pollDelay(){
+  const pushed=!!(S.push&&S.push.on&&ME().pushOn);
+  const waiting=Object.values(reqOut()).some(x=>x.status==='pending')||S.rooms.some(r=>(r.invs||[]).some(i=>i.status==='pending'));
+  if(UI.view==='buddy')return pushed?10000:5000;
+  if(waiting)return pushed?20000:8000;
+  return pushed?60000:30000;
+}
+let lastPoll=Date.now();
+/* a 1 s tick re-checks the delay, so opening Study buddy switches to fast polling straight away */
+setInterval(()=>{if(document.hidden)return;let d=30000;try{d=pollDelay()}catch(e){}if(Date.now()-lastPoll>=d){lastPoll=Date.now();inviteSync(false)}},1000);
+const syncNowSoon=()=>{if(!document.hidden){lastPoll=Date.now();inviteSync(false)}};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncNowSoon();setTimeout(buddyPushCheck,800)}});
+window.addEventListener('online',syncNowSoon);window.addEventListener('focus',()=>{if(!document.hidden)inviteSync(false)});
+setTimeout(()=>inviteSync(false),1500);
+/* the service worker tells the open app when a push arrives, so it fetches the details immediately */
+if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',ev=>{const d=ev.data||{};
+  if(d.type==='aura-push'&&d.kind){inviteSync(false);setTimeout(()=>inviteSync(false),1200)}
+  else if(d.type==='aura-open'){go('buddy');inviteSync(false)}});
+/* if turning alerts on happened after the buddy registration, or the browser renewed the subscription, upload the new keys */
+async function buddyPushCheck(){
+  try{if(!invReady()||!('serviceWorker' in navigator)||!('Notification' in window)||Notification.permission!=='granted')return;
+    const m=ME();if(!m.reg)return;
+    const reg=await Promise.race([navigator.serviceWorker.ready,new Promise(r=>setTimeout(()=>r(null),3000))]);const sub=reg&&await reg.pushManager.getSubscription();
+    if(sub&&m.pushEp!==sub.endpoint){await buddyEnsure(true);if(UI.view==='buddy'&&!$('#modal').innerHTML&&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||''))render()}
+  }catch(e){}
+}
+setTimeout(buddyPushCheck,3500);
+try{if(new URLSearchParams(location.search).get('go')==='buddy'){setTimeout(()=>{go('buddy');history.replaceState(null,'',location.pathname)},300)}}catch(e){}
 async function invRespond(id,status){
   const rec=(S.invIn||{})[id];if(!rec||rec.status!=='pending')return;
   try{
@@ -3648,7 +3695,10 @@ function buddyTop(){
    <p class="sm muted">Give this code to a friend. When they add it as your buddy, you can send each other real study room invitations. Invitations are only delivered to the buddy you choose.</p>
    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px"><b class="num" style="font-size:22px;letter-spacing:.08em" id="mycode">${bshow(m.code)}</b><button class="btn sm" data-act="codeCopy">Copy code</button><button class="btn sm ghost" data-act="invCheck">Check for invitations</button></div>
    <form data-form="meName" class="row" style="gap:8px;margin-top:10px;align-items:end;flex-wrap:wrap"><label class="f" style="flex:1;min-width:180px">Your name, shown to your buddy<input class="in" name="name" required maxlength="40" value="${esc(m.name)}" placeholder="Your first name"></label><button class="btn">Save name</button></form>
-   <p class="sm faint" style="margin-top:8px">${m.reg&&m.pushOn?'Phone alerts for invitations are on.':'To also get invitations as phone notifications, turn on alerts under Profile. Otherwise you will see them here and when you open the app.'} The invitation details (subject, time, place, link) are stored on the AuraStudent server so your buddy can receive them.</p></section>`;
+   ${(()=>{const perm='Notification' in window?Notification.permission:'unsupported',on=!!(m.reg&&m.pushOn&&perm==='granted');
+     return `<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px"><span class="pill ${on?'ok':''}">${on?'Phone notifications: on':perm==='denied'?'Phone notifications: blocked':'Phone notifications: off'}</span>${on?'':perm==='denied'?'':`<button class="btn sm pri" data-act="pushOn">Turn on phone notifications</button>`}</div>
+     <p class="sm faint" style="margin-top:8px">${on?'You will be notified about buddy requests, room invitations and replies, even when the app is closed. The sound on a locked phone is set by your phone for this app, not by AuraStudent.':perm==='denied'?'Notifications are blocked for this site. Allow them in your browser or phone settings, then reopen this page.':'Without this you only see requests and invitations while the app is open.'} While the app is open they appear within a few seconds, with a short chime if Sound is on in your reminder settings.</p>`})()}
+   <p class="sm faint" style="margin-top:8px">The invitation details (subject, time, place, link) are stored on the AuraStudent server so your buddy can receive them.</p></section>`;
   return incCard+codeCard;
 }
 {const _vb=VIEWS.buddy;VIEWS.buddy=()=>{const h=_vb(),mk='<section class="card"><header><h2>Find people to add</h2>';
@@ -3736,32 +3786,26 @@ async function reqCancel(id){
     if(o.status==='accepted'){addBuddyFrom(o.to,o.name,o);save();render()}}
   catch(e){toast('Could not cancel: '+pushErr(e))}
 }
-let reqBusy=false;
-async function reqSync(manual){
-  if(!invReady()||reqBusy||!navigator.onLine)return;const m=ME();if(!m.reg)return;
-  reqBusy=true;
-  try{
-    const r=await invCall('/req/list',{since:m.rsince||0});let ch=false;
+{const _po=A.pushOn;A.pushOn=async function(el){await _po(el);setTimeout(buddyPushCheck,500)}}
+function reqApply(list){
+  const m=ME();let ch=false;
+  const r={reqs:list};
     for(const q of r.reqs||[]){
       m.rsince=Math.max(m.rsince||0,q.updated||0);
       if(q.to===m.code){
         const prior=reqIn()[q.id];reqIn()[q.id]={...q};ch=true;
-        if(!prior&&q.status==='pending')invNotify(`${q.fromName} sent you a study buddy request`,'Open Study buddy to accept or decline.');
-        else if(prior&&prior.status==='pending'&&q.status==='cancelled')invNotify(`${q.fromName} cancelled their study buddy request`,'It is no longer waiting for you.');
+        if(!prior&&q.status==='pending')invNotify(`Study buddy request from ${q.fromName}`,'Open Study buddy to accept or decline.','request');
+        else if(prior&&prior.status==='pending'&&q.status==='cancelled')invNotify(`${q.fromName} cancelled their study buddy request`,'It is no longer waiting for you.','cancelled');
       }else if(q.from===m.code){
         const o=reqOut()[q.id];if(!o||o.status===q.status)continue;
         o.status=q.status;o.updated=q.updated;ch=true;
         const nm=q.toName||o.name;
-        if(q.status==='accepted'){addBuddyFrom(q.to,nm,o);invNotify(`${nm} accepted your study buddy request`,'They are now in your study buddy list.')}
-        else if(q.status==='declined')invNotify(`${nm} declined your study buddy request`,'Nobody was added to either list.');
+        if(q.status==='accepted'){addBuddyFrom(q.to,nm,o);invNotify(`${nm} accepted your study buddy request`,'They are now in your study buddy list.','accepted')}
+        else if(q.status==='declined')invNotify(`${nm} declined your study buddy request`,'Nobody was added to either list.','declined');
       }
     }
-    rawSave();
-    if(ch){save();if(UI.view==='buddy'&&!$('#modal').innerHTML&&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||''))render()}
-  }catch(e){if(manual)toast('Could not check requests: '+pushErr(e))}
-  reqBusy=false;
+  if(ch){rawSave();save();if(UI.view==='buddy'&&!$('#modal').innerHTML&&!/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||''))render()}
 }
-{const _is=inviteSync;inviteSync=async function(manual){await _is(manual);await reqSync(manual)}}
 function reqCard(){
   const inc=Object.values(reqIn()).sort((a,b)=>(b.updated||0)-(a.updated||0)).slice(0,8),out=Object.values(reqOut()).sort((a,b)=>(b.updated||0)-(a.updated||0)).slice(0,8);
   if(!inc.length&&!out.length)return '';

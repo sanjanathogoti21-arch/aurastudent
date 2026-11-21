@@ -257,11 +257,11 @@ async function encPush(p256dh, auth, plain) {
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']), cat(enc.encode(plain), new Uint8Array([2]))));
   return cat(salt, new Uint8Array([0, 0, 16, 0]), new Uint8Array([asPub.length]), asPub, ct);
 }
-async function notifyBuddy(env, code, title, body, tag) {
+async function notifyBuddy(env, code, title, body, tag, kind) {
   try {
     const u = await env.DB.prepare('SELECT endpoint, p256dh, auth FROM bu WHERE code = ?1').bind(code).first();
     if (!u || !u.endpoint || !u.p256dh || !u.auth) return false;
-    const r = await sendRaw(u.endpoint, await encPush(u.p256dh, u.auth, JSON.stringify({ title, body, tag })), env);
+    const r = await sendRaw(u.endpoint, await encPush(u.p256dh, u.auth, JSON.stringify({ title, body, tag, kind: kind || '' })), env);
     if (r.status === 404 || r.status === 410) await env.DB.prepare('UPDATE bu SET endpoint = NULL, p256dh = NULL, auth = NULL WHERE code = ?1').bind(code).run();
     return r.ok;
   } catch { return false; }
@@ -307,8 +307,16 @@ async function buddyRoutes(path, b, env, ip) {
     const now = Date.now();
     const res = await env.DB.prepare('INSERT OR IGNORE INTO inv (id, frm, tow, fname, topic, d, s, e, place, link, status, created, updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \'pending\', ?11, ?11)').bind(id, code, to, me.name || 'A classmate', topic, d, st, en, place, link, now).run();
     if (!res || !res.meta || res.meta.changes !== 1) return json(env, { ok: true, duplicate: true });
-    const pushed = await notifyBuddy(env, to, `${me.name || 'A classmate'} invited you to a study room`, `${topic} · ${fmtD(d)}, ${st} to ${en} · ${place}${link ? ' · ' + link : ''}`, 'inv-' + id);
+    const pushed = await notifyBuddy(env, to, `Study room invitation from ${me.name || 'A classmate'}`, `${topic} · ${fmtD(d)}, ${st} to ${en} · ${place}${link ? ' · ' + link : ''}`, 'inv-' + id, 'invite');
     return json(env, { ok: true, pushed });
+  }
+  if (path === '/bu/poll') {
+    const since = Math.max(0, Math.floor(Number(b.since) || 0)), rsince = Math.max(0, Math.floor(Number(b.rsince) || 0));
+    const [iv, rq] = await Promise.all([
+      env.DB.prepare('SELECT * FROM inv WHERE (tow = ?1 OR frm = ?1) AND updated > ?2 ORDER BY updated LIMIT 100').bind(code, since).all(),
+      env.DB.prepare('SELECT q.*, (SELECT name FROM bu WHERE code = q.tow) AS tname FROM breq q WHERE (q.tow = ?1 OR q.frm = ?1) AND q.updated > ?2 ORDER BY q.updated LIMIT 100').bind(code, rsince).all(),
+    ]);
+    return json(env, { now: Date.now(), invs: (iv.results || []).map(rowOut), reqs: (rq.results || []).map((r) => ({ id: r.id, from: r.frm, to: r.tow, fromName: r.fname, toName: r.tname || '', status: r.status, updated: r.updated })) });
   }
   if (path === '/inv/list') {
     const since = Math.max(0, Math.floor(Number(b.since) || 0));
@@ -324,7 +332,7 @@ async function buddyRoutes(path, b, env, ip) {
     if (row.status !== 'pending') return json(env, { ok: true, status: row.status, unchanged: true });
     await env.DB.prepare('UPDATE inv SET status = ?2, updated = ?3 WHERE id = ?1').bind(id, st, Date.now()).run();
     const who = me.name || 'Your buddy', what = `${row.topic} · ${fmtD(row.d)}, ${row.s} to ${row.e}`;
-    const pushed = cancel ? await notifyBuddy(env, row.tow, `${row.fname} cancelled the study room`, what, 'inv-' + id) : await notifyBuddy(env, row.frm, `${who} ${st} your study room`, what, 'inv-' + id);
+    const pushed = cancel ? await notifyBuddy(env, row.tow, `${row.fname} cancelled a study room invitation`, what, 'inv-' + id, 'cancelled') : await notifyBuddy(env, row.frm, `${who} ${st} your study room invitation`, what, 'inv-' + id + '-' + st, st);
     return json(env, { ok: true, status: st, pushed });
   }
   /* ---- study buddy requests (like follow requests): nobody is added until the other person accepts ---- */
@@ -342,7 +350,7 @@ async function buddyRoutes(path, b, env, ip) {
     const now = Date.now();
     const res = await env.DB.prepare("INSERT OR IGNORE INTO breq (id, frm, tow, fname, status, created, updated) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?5)").bind(id, code, to, me.name || 'A classmate', now).run();
     if (!res || !res.meta || res.meta.changes !== 1) return json(env, { ok: true, duplicate: true });
-    const pushed = await notifyBuddy(env, to, `${me.name || 'A classmate'} sent you a study buddy request`, 'Open Study buddy in AuraStudent to accept or decline.', 'req-' + id);
+    const pushed = await notifyBuddy(env, to, `Study buddy request from ${me.name || 'A classmate'}`, `${me.name || 'A classmate'} wants to be your study buddy. Open Study buddy to accept or decline.`, 'req-' + id, 'request');
     return json(env, { ok: true, pushed });
   }
   if (path === '/req/list') {
@@ -358,7 +366,7 @@ async function buddyRoutes(path, b, env, ip) {
     if (cancel ? row.frm !== code : row.tow !== code) return json(env, { error: 'You can not change this request.' }, 403);
     if (row.status !== 'pending') return json(env, { ok: true, status: row.status, unchanged: true });
     await env.DB.prepare('UPDATE breq SET status = ?2, updated = ?3 WHERE id = ?1').bind(id, st, Date.now()).run();
-    const pushed = cancel ? false : await notifyBuddy(env, row.frm, `${me.name || 'Your buddy'} ${st} your study buddy request`, st === 'accepted' ? 'You are now study buddies. Open Study buddy to plan a room.' : 'They chose not to add you right now.', 'req-' + id);
+    const pushed = cancel ? false : await notifyBuddy(env, row.frm, `${me.name || 'Your buddy'} ${st} your study buddy request`, st === 'accepted' ? 'You are now study buddies. Open Study buddy to plan a room.' : 'They chose not to add you right now.', 'req-' + id + '-' + st, st);
     return json(env, { ok: true, status: st, pushed, name: me.name || '' });
   }
   return json(env, { error: 'Not found' }, 404);
