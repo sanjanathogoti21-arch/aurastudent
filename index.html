@@ -3028,7 +3028,8 @@ function vExec(c){
    }
    case 'summary':return vSay(vDaySummary(c.date));
    case 'next':{const t0=today(),n=nowM(),e=occ(t0).filter(x=>x.type!=='rest'&&mins(x.start)>n).sort((a,b)=>mins(a.start)-mins(b.start))[0];return vSay(e?`Next is ${e.title} at ${vT12(e.start)}.`:'Nothing else on your calendar today.')}
-   case 'ask':{vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task or event${VNW?' ('+VNW+')':''}, so I am asking Aura instead.`);try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
+   case 'ask':{if(document.getElementById('vcap')){vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task. Tap the big button and try again, for example: Presentation tomorrow, remind me at 9 pm today. Or type it below.`);return}
+   vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task or event${VNW?' ('+VNW+')':''}, so I am asking Aura instead.`);try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
   }
 }
 /* ---- understanding natural sentences in any language (AI on the server), with the rule parser as fallback ---- */
@@ -3476,6 +3477,7 @@ function vDirect(c){
     if(r.dup&&c.time&&!r.dup.dueTime){const sn=TS.patch(r.dup,{dueTime:c.time});if(sn)return vSay(`${r.dup.title} was already in your tasks (${TS.where(r.dup)}), so I set its time to ${vT12(c.time)} and updated the reminder.`,()=>TS.restore(sn))}
     if(r.dup)return vSay(`That is already in your tasks: ${r.dup.title} (${TS.where(r.dup)}). I did not add a duplicate.`);
     const t=r.task;
+    if(t.remTime&&t.remDate&&S.notif&&S.notif.deadlines)return vSay(`Added: ${t.title}${t.due?', '+vDateSay(t.due):''}. Reminder at ${vT12(t.remTime)} ${vDateSay(t.remDate)}.`,()=>{S.tasks=S.tasks.filter(y=>y.id!==t.id);save();render();vBanner('Removed')});
     return vSay(`Added ${t.title} under ${TS.where(t)}.${TS.rem(t)}${t.due?'':' Say a date and I will add it.'}`,()=>{const x=TS.arch();S.tasks=S.tasks.filter(y=>y.id!==t.id);save();render();vBanner('Removed')});
   }
   return vCommit(c);
@@ -3592,16 +3594,34 @@ Object.assign(F,{quickCap:(d,fm)=>{const q=String(d.get('q')||'').trim();if(!q){
 {let last=0,lx=0,ly=0;
  document.addEventListener('pointerup',e=>{
   if(UI.view!=='today'||!VC().dbl||VOREC||(e.pointerType==='mouse'&&e.button!==0))return;
-  const el=e.target;if(!el||!el.closest||el.closest('button,a,input,textarea,select,label,summary,details,form,[data-act],[data-form],[role=button],[role=switch],#modal,#vbanner,#rems,.vfab,.orb,nav,header'))return;
+  const el=e.target;if(!el||!el.closest||el.closest('button,a,input,textarea,select,label,summary,details,form,[data-act],[data-form],[role=button],[role=switch],#modal,#vcap,#vbanner,#rems,.vfab,.orb,nav,header'))return;
   if(String(window.getSelection&&window.getSelection()||'').length>0)return;
   const n=Date.now();
   if(n-last<350&&Math.abs(e.clientX-lx)<40&&Math.abs(e.clientY-ly)<40){last=0;voiceTap()}else{last=n;lx=e.clientX;ly=e.clientY}
  },{passive:true});}
-/* opened from the home-screen shortcut (?voice=1): go to Today and try to start listening; if the browser needs a tap, highlight the big button */
+/* Android long-press shortcut "Voice task" opens ?voice=1: show a full-screen voice capture screen and try to start listening */
+function vcapOpen(){
+  if(document.getElementById('vcap'))return;
+  const can=!!SR||(typeof vCanCloud==='function'&&vCanCloud());
+  const d=document.createElement('div');d.id='vcap';d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');d.setAttribute('aria-label','Voice task');
+  d.style.cssText='position:fixed;inset:0;z-index:45;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;overflow:auto';
+  d.innerHTML=`<div style="font-weight:750;font-size:20px">Voice task</div>
+   <button class="btn pri" id="vc-mic" data-act="voice" style="width:min(440px,100%);min-height:128px;font-size:26px;font-weight:750;display:flex;align-items:center;justify-content:center;gap:12px;border-radius:24px" ${can?'':'disabled'}>${ico('mic',40)}<span id="vc-mt">Tap to speak</span></button>
+   <p id="vc-st" role="status" aria-live="polite" style="font-size:18px;font-weight:650;max-width:440px;min-height:48px;margin:0">${can?'Starting the microphone...':'Voice input is not supported in this browser. Type the task below.'}</p>
+   <p class="sm muted" style="max-width:440px;margin:0">Say a task and when to remind you, for example: <b>Presentation tomorrow. Remind me at 9 pm today.</b></p>
+   <form data-form="quickCap" class="row" style="gap:8px;width:min(440px,100%);align-items:end"><label class="f" style="flex:1">Or type it instead<input class="in" id="vc-in" name="q" autocomplete="off" maxlength="300" placeholder="Presentation tomorrow. Remind me at 9 pm today" aria-label="Type a task"></label><button class="btn">Add</button></form>
+   <button class="btn ghost" data-act="vcapClose">Open AuraStudent</button>`;
+  document.body.appendChild(d);
+}
+function vcapSt(text){const e=document.getElementById('vc-st');if(e)e.textContent=text}
+{const _vb2=vBanner;vBanner=function(text,undo,live){_vb2.apply(this,arguments);vcapSt(text)}}
+Object.assign(A,{vcapClose:()=>{try{VOREC&&VOREC.stop()}catch(e){}const d=document.getElementById('vcap');if(d)d.remove();go('today')}});
+setInterval(()=>{const l=document.getElementById('vc-mt');if(l)l.textContent=VOREC?'Listening... tap to stop':'Tap to speak'},400);
 try{if(new URLSearchParams(location.search).get('voice')==='1'){
-  setTimeout(()=>{try{history.replaceState(null,'',location.pathname)}catch(e){}go('today');
-    setTimeout(()=>{voiceTap();
-      setTimeout(()=>{if(!VOREC){const b=document.getElementById('qc-mic');if(b){b.classList.add('qcpulse');try{b.scrollIntoView({block:'center'})}catch(e){}}}},3500)},400)},900)}}catch(e){}
+  try{history.replaceState(null,'',location.pathname)}catch(e){}
+  vcapOpen();
+  setTimeout(()=>{voiceTap();
+    setTimeout(()=>{if(!VOREC){const b=document.getElementById('vc-mic');if(b){b.classList.add('qcpulse');if(!/blocked|not supported|No microphone|another app|could not/i.test((document.getElementById('vc-st')||{}).textContent||''))vcapSt('Tap the big button, then speak.')}}},3500)},700)}}catch(e){}
 setInterval(()=>{const l=document.getElementById('qc-mt'),b=document.getElementById('qc-mic');if(!l||!b)return;const on=!!VOREC;l.textContent=on?'Listening... tap to stop':'Tap to speak';b.classList.toggle('on',on)},400);
 
 /* ===================== study room invitations (real, through the AuraStudent server) ===================== */
