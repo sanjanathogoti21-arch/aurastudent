@@ -456,14 +456,14 @@ function seed(){
   };
 }
 let S;
-try{const raw=localStorage.getItem(KEY);S=raw?JSON.parse(raw):null}catch(e){S=null}
+try{const raw=localStorage.getItem(KEY);window.__lastRaw=raw;S=raw?JSON.parse(raw):null}catch(e){S=null}
 if(!S||!S.profile||!S.events){S=freshStart()}
 S.notif=Object.assign({events:true,eventLead:15,deadlines:true,lead:'1 day',clashes:true,sound:true},S.notif||{});
 S.fired=S.fired||{};for(const k in S.fired)if(Date.now()-S.fired[k]>3*864e5)delete S.fired[k];
 S.learn=S.learn||{};S.learn.notes=S.learn.notes||[];S.learn.estMult=S.learn.estMult||{};S.chat=S.chat||[];
 S.auto=Object.assign({level:'ask',log:[],pending:[],skip:[],noMove:[],skipPend:[],speak:false},S.auto||{});
 ensureNew(S);
-let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}},120)}
+let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,window.__lastRaw=JSON.stringify(S))}catch(e){}},120)}
 
 const UI={view:'today',calMode:innerWidth<760?'day':'week',calDate:today(),taskTab:'open',oppFilter:'all',insWeek:monday(today()),editSug:null,confirmWipe:false};
 
@@ -2952,7 +2952,7 @@ function vBanner(text,undo,live){
   b.innerHTML=`<span class="vdot ${live?'live':''}"></span><span class="vtx">${esc(text)}</span>${live&&VOREC?'<span class="vlvl"><i></i></span>':''}${undo?'<button class="vbt" data-act="voiceUndo">Undo</button>':''}<button class="vbt" data-act="voiceClose" aria-label="Close">${'×'}</button>`;
   b.classList.add('on');if(!live)vBannerT=setTimeout(()=>b.classList.remove('on'),undo?8000:Math.max(6000,String(text).length*75));
 }
-function vSay(text,undo){vBanner(text,undo);if(VC().speak&&window.speechSynthesis){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text.slice(0,400));u.lang='en-IN';speechSynthesis.speak(u)}catch(e){}}}
+function vSay(text,undo){vBanner(text,undo);if(VC().speak&&window.speechSynthesis&&!window.__ahQuiet){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text.slice(0,400));u.lang='en-IN';speechSynthesis.speak(u)}catch(e){}}}
 function vDaySummary(date){
   const ev=occ(date).filter(e=>e.type!=='rest').sort((a,b)=>mins(a.start)-mins(b.start));
   const tk=S.tasks.filter(t=>!t.done&&t.due&&(t.due===date||(date===today()&&t.due<date)));
@@ -3605,6 +3605,69 @@ Object.assign(F,{quickCap:(d,fm)=>{const q=String(d.get('q')||'').trim();if(!q){
   const n=Date.now();
   if(n-last<350&&Math.abs(e.clientX-lx)<40&&Math.abs(e.clientY-ly)<40){last=0;voiceTap()}else{last=n;lx=e.clientX;ly=e.clientY}
  },{passive:true});}
+/* ===================== hands-free bridge for the Android app =====================
+   The native Android service hears "Hey Aura, add task ...", then calls auraHandsFree(text, prior) in a hidden WebView.
+   It reuses the normal voice parser (vParse / vRunRules) and the normal task list. It never saves unless the sentence is clear. */
+function ahNum(p){const O={zero:0,oh:0,o:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9},T={ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50};let n=0;for(const w of String(p).trim().split(/\s+/)){if(w in T)n+=T[w];else if(w in O)n+=O[w]}return n}
+function ahNorm(t){
+  t=String(t||'').toLowerCase().replace(/[.,!?;]+/g,' ').replace(/\b([ap])\s+m\b/g,'$1m').replace(/\s+/g,' ').trim();
+  const H='one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve',
+        M='(?:(?:oh|o)\\s+(?:one|two|three|four|five|six|seven|eight|nine)|(?:ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)|(?:twenty|thirty|forty|fifty)(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?)';
+  t=t.replace(new RegExp('\\b('+H+')(?:\\s+('+M+'))?\\s*(am|pm)\\b','g'),(m,h,mi,ap)=>ahNum(h)+(mi?':'+String(ahNum(mi)).padStart(2,'0'):'')+' '+ap);
+  t=t.replace(new RegExp('\\b(at|by|before|around)\\s+('+H+')(?:\\s+('+M+'))?\\b(?!\\s*(?:am|pm))','g'),(m,w,h,mi)=>w+' '+ahNum(h)+(mi?':'+String(ahNum(mi)).padStart(2,'0'):''));
+  return t;
+}
+async function auraHandsFree(text,prior){
+  const R=(status,say,x)=>Object.assign({status,say},x||{});
+  const saved=window.__ahQuiet,_vb=vBanner,cap=[];
+  try{
+    let t=ahNorm(text).replace(/^(?:hey|hi|ok|okay|a)\s+(?:aura|aurora|ora|laura|ara|ira)\b\s*/,'').trim();
+    if(prior&&prior.text){
+      const p=ahNorm(prior.text);
+      if(prior.why==='ampm'){const ap=/\b(am|pm)\b/.exec(t);if(!ap)return R('clarify','Please say a.m. or p.m.',{why:'ampm',text:prior.text});t=p.replace(/\bat\s+(\d{1,2})(?::(\d{2}))?(?!\s*(?:am|pm))/,(m,h,mm)=>'at '+h+(mm?':'+mm:'')+' '+ap[1])}
+      else if(prior.why==='past')t=(p.replace(/\b(?:at|by)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?/g,' ').replace(/\b(today|tonight)\b/g,' ')+' '+t).replace(/\s+/g,' ').trim();
+      else if(prior.why==='title')t='add task '+t+' '+p.replace(/^(?:add|create|new)\s+(?:a\s+)?task\b/,'').trim();
+      else t=(p+' '+t).trim();
+    }
+    if(!t)return R('clarify','Yes? Say: add task, then what and when.',{why:'empty',text:''});
+    if(/^(?:add|create|new)\s+(?:a\s+)?(?:task|reminder|to do|todo)$/.test(t))return R('clarify','What is the task?',{why:'title',text:t});
+    if(!/^(?:add|create|new|schedule|remind|i have|i need)\b/.test(t)&&!/\bremind me\b/.test(t))return R('unsupported','Say it like this: Hey Aura, add task, then what and when.');
+    let c=vParse(t);if(c.kind==='ask'||c.kind==='empty')c=vParse('add task '+t);
+    if(c.kind==='clarify')return R('clarify',c.why==='ampm'?'Is that reminder in the morning or the evening? Say a.m. or p.m.':'That time has already passed today. Say a later time or another day.',{why:c.why==='ampm'?'ampm':'past',text:t});
+    if(c.kind!=='task')return R('unsupported','I can add tasks by voice. Open AuraStudent for anything else.');
+    if(!c.title||!String(c.title).trim())return R('clarify','What is the task?',{why:'title',text:t});
+    const hasClock=/\b(am|pm|noon|midnight)\b|\d:\d\d/.test(t),timeWord=c.time||c.remTime;
+    if(timeWord&&!hasClock)return R('clarify','Is that in the morning or the evening? Say a.m. or p.m.',{why:'ampm',text:t});
+    if(!c.date&&!c.time&&!c.remTime)return R('clarify','When is it due?',{why:'when',text:t});
+    const nowM=new Date().getHours()*60+new Date().getMinutes();
+    if(c.date===today()&&c.time&&mins(c.time)<=nowM)return R('clarify','That time has already passed today. Say a later time or another day.',{why:'past',text:t});
+    const before=new Set(S.tasks.map(x=>x.id));
+    window.__ahQuiet=true;vBanner=function(x){cap.push(String(x))};
+    vRunRules(t);
+    await new Promise(r=>setTimeout(r,30));
+    const made=S.tasks.filter(x=>!before.has(x.id));
+    if(!made.length){
+      if(cap.some(x=>/already in your tasks|did not add a duplicate/i.test(x)))return R('duplicate','That task is already in your list, so I did not add it again.');
+      return R('failed','I could not add that. '+(cap[cap.length-1]||'Please try again.'));
+    }
+    const k=made[0];
+    /* persist now and read it back: only then do we say it was saved */
+    try{localStorage.setItem(KEY,window.__lastRaw=JSON.stringify(S))}catch(e){return R('failed','I could not save it on this phone. It was not added.')}
+    let ok=false;try{ok=!!JSON.parse(localStorage.getItem(KEY)).tasks.find(x=>x.id===k.id)}catch(e){}
+    if(!ok)return R('failed','I could not save it on this phone. It was not added.');
+    let at=null;const D=(d,tm)=>{const[y,mo,da]=d.split('-').map(Number),[h,mi]=(tm||'08:00').split(':').map(Number);return new Date(y,mo-1,da,h,mi,0,0).getTime()};
+    if(k.remDate&&k.remTime)at=D(k.remDate,k.remTime);else if(k.due)at=D(k.due,k.dueTime||'08:00');
+    const say='Added: '+k.title+(k.due?', '+vDateSay(k.due)+(k.dueTime?' at '+vT12(k.dueTime):''):'')+'.'+(k.remTime&&k.remDate?' Reminder at '+vT12(k.remTime)+' '+vDateSay(k.remDate)+'.':'');
+    return R('saved',say,{title:k.title,id:k.id,remindAt:at&&at>Date.now()?at:0});
+  }catch(e){return R('failed','Something went wrong, so it was not added. '+String(e&&e.message||e).slice(0,80))}
+  finally{vBanner=_vb;window.__ahQuiet=saved}
+}
+window.auraHandsFree=auraHandsFree;
+/* the Android app runs a hidden copy of this page to save tasks; when the visible copy comes back, pick up what was saved */
+function auraSyncFromStorage(){try{if(typeof AuraAndroid==='undefined')return;const raw=localStorage.getItem(KEY);if(!raw||raw===window.__lastRaw)return;S=JSON.parse(raw);window.__lastRaw=raw;render()}catch(e){}}
+window.auraSyncFromStorage=auraSyncFromStorage;
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)auraSyncFromStorage()});window.addEventListener('focus',auraSyncFromStorage);
+
 /* Android long-press shortcut "Voice task" opens ?voice=1: show a full-screen voice capture screen and try to start listening */
 function vcapOpen(){
   if(document.getElementById('vcap'))return;
@@ -3650,6 +3713,26 @@ try{if(new URLSearchParams(location.search).get('voice')==='1'){
     }catch(e){last=''}
   }
   setTimeout(sched,3500);setInterval(sched,60000);document.addEventListener('visibilitychange',()=>{if(document.hidden)sched()});
+  /* Hands-free "Hey Aura" (Android app only): the listening service lives in native code; this card is its control panel */
+  const H=P.HandsFree;if(!H)return;
+  let hf={running:false,status:'Hands-free is off.',mic:false,batteryOk:false};
+  const hfDraw=()=>{const e=document.getElementById('hf-card');if(e)e.outerHTML=hfCard()};
+  const hfSet=r=>{if(r){hf=Object.assign(hf,r);hfDraw()}};
+  const esc2=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  window.hfCard=function(){return `<section class="card" id="hf-card" aria-labelledby="hf-h"><header><h2 id="hf-h">Hands-free "Hey Aura"</h2></header>
+   <p class="sm" role="status" aria-live="polite"><b>${hf.running?'&#127908; Microphone is ON':'Microphone is off'}.</b> ${esc2(hf.status)}</p>
+   <p class="sm muted">Say: "Hey Aura, add task test tomorrow at 4 pm". Listening runs on this phone only while the notification "AuraStudent is listening" is showing. Start it while AuraStudent is open; it keeps listening after you go to the home screen or another app. It does not work after the app is force-stopped or the phone restarts, and it is not promised on the locked screen.</p>
+   <div class="row" style="margin-top:10px;flex-wrap:wrap">${hf.running?'<button class="btn" data-act="hfStop">Stop listening</button>':'<button class="btn pri" data-act="hfStart">Start listening</button>'}
+   <button class="btn" data-act="hfBattery">${hf.batteryOk?'Battery: unrestricted':'Allow background battery use'}</button><button class="btn" data-act="hfApp">App permissions</button></div>
+   <p class="sm muted" style="margin-top:8px">Stop any time with the button above or the "Stop listening" button in the Android notification. Without this, the in-app mic and typing still work.</p></section>`};
+  {const _vh=VIEWS.profile;VIEWS.profile=()=>_vh()+window.hfCard()}
+  Object.assign(A,{
+    hfStart:async()=>{try{hfSet(await H.start())}catch(e){hfSet({status:'Could not start: '+(e&&e.message||e)})}},
+    hfStop:async()=>{try{hfSet(await H.stop())}catch(e){}},
+    hfBattery:()=>{H.openSettings({what:'battery'}).catch(()=>{})},
+    hfApp:()=>{H.openSettings({what:'app'}).catch(()=>{})}});
+  H.addListener('status',hfSet);
+  const hfPoll=()=>H.status().then(hfSet).catch(()=>{});hfPoll();document.addEventListener('visibilitychange',()=>{if(!document.hidden)hfPoll()});
 })();
 setInterval(()=>{const l=document.getElementById('qc-mt'),b=document.getElementById('qc-mic');if(!l||!b)return;const on=!!VOREC;l.textContent=on?'Listening... tap to stop':'Tap to speak';b.classList.toggle('on',on)},400);
 
