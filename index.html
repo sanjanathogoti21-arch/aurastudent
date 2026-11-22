@@ -3586,7 +3586,7 @@ function quickCapCard(){
    <p class="sm muted" style="margin-top:8px">${can?'Say it once, for example: <b>Presentation tomorrow, remind me at 9 pm today</b>. I will save the task, set the reminder and tell you what I added.'+(VC().dbl?' Tip: you can also double-tap an empty area of this screen.':''):'Voice input is not supported in this browser. Use Chrome on Android, or type below.'}</p>
    <form data-form="quickCap" class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:end"><label class="f" style="flex:1;min-width:200px">Or type it instead<input class="in" id="qc-in" name="q" autocomplete="off" maxlength="300" placeholder="Presentation tomorrow, remind me at 9 pm today" aria-label="Type a task"></label><button class="btn">Add</button></form></section>`;
 }
-{const _vq=VIEWS.today;VIEWS.today=()=>{const h=_vq(),c=quickCapCard(),k='<section class="hero fadein">';return h.includes(k)?h.replace(k,c+k):c+h}}
+{const _vq=VIEWS.today;VIEWS.today=()=>{const h=_vq(),c=quickCapCard(),k='<section class="hero fadein">',i=h.indexOf(k),j=i<0?-1:h.indexOf('</section>',i);return j<0?c+h:h.slice(0,j+10)+'\n'+c+h.slice(j+10)}}
 Object.assign(F,{quickCap:(d,fm)=>{const q=String(d.get('q')||'').trim();if(!q){toast('Type or say a task first.');return}try{fm.reset()}catch(e){}vRun(q)}});
 /* double-tap an empty part of Today to start listening (only while the app is open) */
 {let last=0,lx=0,ly=0;
