@@ -65,3 +65,14 @@ console.log('Android project patched');
   if (fs.existsSync(vg)) fs.writeFileSync(vg, fs.readFileSync(vg, 'utf8').replace(/minSdkVersion = \d+/, 'minSdkVersion = 26'));
   console.log('Hands-free native code added');
 }
+
+/* ---------- AuraStudent launcher icon (replaces the default Capacitor icon) ---------- */
+{
+  const res = path.join(root, 'res');
+  fs.rmSync(path.join(res, 'mipmap-anydpi-v26'), { recursive: true, force: true });
+  for (const d of fs.readdirSync(path.join(__dirname, 'icons'))) {
+    const dst = path.join(res, d); fs.mkdirSync(dst, { recursive: true });
+    for (const f of fs.readdirSync(path.join(__dirname, 'icons', d))) fs.copyFileSync(path.join(__dirname, 'icons', d, f), path.join(dst, f));
+  }
+  console.log('Launcher icon replaced');
+}
