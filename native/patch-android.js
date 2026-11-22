@@ -76,3 +76,21 @@ console.log('Android project patched');
   }
   console.log('Launcher icon replaced');
 }
+
+/* ---------- AuraStudent launcher icon (replaces Capacitor's default) ---------- */
+{
+  const res = path.join(root, 'res');
+  for (const d of fs.readdirSync(path.join(__dirname, 'icons'))) {
+    fs.mkdirSync(path.join(res, d), { recursive: true });
+    for (const f of fs.readdirSync(path.join(__dirname, 'icons', d))) fs.copyFileSync(path.join(__dirname, 'icons', d, f), path.join(res, d, f));
+  }
+  fs.mkdirSync(path.join(res, 'mipmap-anydpi-v26'), { recursive: true });
+  const ad = '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n    <background android:drawable="@color/ic_launcher_background"/>\n    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n</adaptive-icon>\n';
+  fs.writeFileSync(path.join(res, 'mipmap-anydpi-v26', 'ic_launcher.xml'), ad);
+  fs.writeFileSync(path.join(res, 'mipmap-anydpi-v26', 'ic_launcher_round.xml'), ad);
+  fs.mkdirSync(path.join(res, 'values'), { recursive: true });
+  fs.writeFileSync(path.join(res, 'values', 'ic_launcher_background.xml'), '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#0A3C37</color>\n</resources>\n');
+  // Capacitor's default foreground is a vector drawable with the same name; remove it so ours is used
+  for (const f of ['drawable/ic_launcher_foreground.xml', 'drawable-v24/ic_launcher_foreground.xml']) { try { fs.unlinkSync(path.join(res, f)); } catch (e) {} }
+  console.log('Launcher icon replaced');
+}
