@@ -2481,6 +2481,9 @@ function taskTimeRems(){
     const dd=between(t0,t.due);if(dd<0)continue;const at=dd*1440+mins(t.dueTime);
     if(n>=at-lead&&n<at)fireRem(`tl:${t.id}:${t.due}:${t.dueTime}`,t.title,`Due in ${at-n} min, at ${t.dueTime}.`);
     if(n>=at&&n<at+120)fireRem(`tn:${t.id}:${t.due}:${t.dueTime}`,`Due now: ${t.title}`,`It was due at ${t.dueTime}.`)}
+  for(const t of S.tasks){if(t.done||!t.remDate||!t.remTime)continue;
+    const dd=between(t0,t.remDate);if(dd<0)continue;const at=dd*1440+mins(t.remTime);
+    if(n>=at&&n<at+120)fireRem(`tr:${t.id}:${t.remDate}:${t.remTime}`,`Reminder: ${t.title}`,t.due?`Due ${vDateSay(t.due)}${t.dueTime?' at '+vT12(t.dueTime):''}.`:'You asked me to remind you now.')}
 }
 function sugRems(){
   if(!S.notif.events)return;
@@ -2503,6 +2506,8 @@ function courseRems(){
     for(const t of S.tasks){if(t.done||!t.due||!t.dueTime)continue;
       add(`tl:${t.id}:${t.due}:${t.dueTime}`,atMs(t.due,mins(t.dueTime)-lead),t.title,`Due in ${lead} min, at ${t.dueTime}.`);
       add(`tn:${t.id}:${t.due}:${t.dueTime}`,atMs(t.due,mins(t.dueTime)),`Due now: ${t.title}`,`It was due at ${t.dueTime}.`)}
+    for(const t of S.tasks){if(t.done||!t.remDate||!t.remTime)continue;
+      add(`tr:${t.id}:${t.remDate}:${t.remTime}`,atMs(t.remDate,mins(t.remTime)),`Reminder: ${t.title}`,t.due?`Due ${vDateSay(t.due)}${t.dueTime?' at '+vT12(t.dueTime):''}.`:'You asked me to remind you now.')}
     for(const c of CRS()){if(crsDone(c)||!c.end)continue;
       add(`cd0:${c.id}:${c.end}`,atMs(c.end,480),`Course ends today: ${c.name}`,`${crsPct(c)}% done.`);
       if(S.notif.lead!=='same')add(`cd1:${c.id}:${c.end}`,atMs(addDays(c.end,-1),480),`Course ends tomorrow: ${c.name}`,`${crsPct(c)}% done.`)}}
@@ -2862,10 +2867,26 @@ function vMatch(q,list,name){
   return {one:sc[0][0]};
 }
 const V_TYPES={class:'class',lecture:'class',lab:'class',exam:'exam',test:'exam','study session':'study','study block':'study','study slot':'study','study time':'study',study:'study',session:'study',meeting:'personal',event:'personal',appointment:'personal',hackathon:'hackathon'};
+/* "I have a presentation tomorrow. Remind me at 9 pm today so I can prepare" -> task + a separate reminder moment */
+const VRMT=/^remind me\s+(?:at|by|on|in|today|tonight|tomorrow|this|next|\d)/i;
+function vRemindSplit(t){
+  const m=/^(.*?\S)[\s,.;]*(?:and\s+|also\s+|then\s+)?(?:please\s+)?remind me\b\s*(.*)$/i.exec(t);
+  if(!m)return null;
+  if(!/^(?:at|by|on|in|today|tonight|tomorrow|this|next|\d)/i.test(m[2]))return null;
+  let clause=m[2].replace(/\s*[,.]?\s*\b(?:so|because)\b\s+(?:that\s+)?(?:i|we)\b.*$/i,'').replace(/[\s.]+$/,'');
+  const dd=vDate(clause),tm=vTime(dd.rest);
+  if(!tm.time&&!dd.date)return null;
+  let time=tm.time||'08:00',date=dd.date;
+  if(!date){const now=new Date(),nm=now.getHours()*60+now.getMinutes();date=mins(time)>nm?today():addDays(today(),1)}
+  return {rest:m[1].trim(),date,time};
+}
 function vParse(raw){
   let t=vNorm(raw);
   t=t.replace(/^(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b\s*/i,'').replace(/^(?:please|can you|could you|would you|will you|i want you to|i would like to|i'd like to|i want to)\s+/i,'').replace(/\s+please$/i,'').trim();
   if(!t)return {kind:'empty'};
+  {const rx=vRemindSplit(t);
+   if(rx){let c=vParse(rx.rest);if(c.kind==='ask'||c.kind==='empty')c=vParse('add task '+rx.rest);
+     if(c.kind==='task'){c.remDate=rx.date;c.remTime=rx.time;return c}}}
   let m;
   {const pm=/^(.+?)[,\s]+i\s+(?:need|have|got|must|should)\s+to\s+(.+)$/i.exec(t);if(pm){const d1=vDate(pm[1]);if(d1.date&&!vClean(d1.rest))t='i need to '+pm[2]+' '+pm[1]}}
   if(/^(?:help|what can (?:i|you) (?:say|do)|how do i use (?:this|voice))\b/i.test(t))return {kind:'help'};
@@ -3086,6 +3107,8 @@ function vNluMap(m){
 }
 async function vRun(raw,alts){
   const first=String(raw||'').trim();
+  /* a task with its own reminder time is handled by the rules parser, which keeps due date and reminder moment separate */
+  try{const c0=first&&vParse(first);if(c0&&c0.kind==='task'&&c0.remTime)return vRunRules(raw,alts)}catch(e){}
   if(first&&VONLU&&!/REPLACE_WITH/.test(PUSH_SERVER)){
     vBanner('Understanding...','',true);
     const c=vNluMap(await vNlu(first));
@@ -3343,6 +3366,7 @@ const TS={
     const d=TS.dupe(title,o.due);if(d)return {dup:d};
     const t={id:'t'+uid(),title,subject:'',due:o.due||null,est:o.est||1,prio:o.prio||2,done:false,sched:0,cat,src:o.src||'manual',created:Date.now()};
     if(o.dueTime&&/^\d{2}:\d{2}$/.test(o.dueTime))t.dueTime=o.dueTime;
+    if(o.remTime&&/^\d{2}:\d{2}$/.test(o.remTime)&&/^\d{4}-\d{2}-\d{2}$/.test(o.remDate||'')){t.remDate=o.remDate;t.remTime=o.remTime}
     S.tasks.push(t);
     if(!TS.saveNow()){S.tasks=S.tasks.filter(x=>x.id!==t.id);return {fail:'storage'}}
     save();render();setTimeout(()=>{try{autoTick()}catch(e){}},400);VCTX={id:t.id,at:Date.now()};
@@ -3357,7 +3381,7 @@ const TS={
     if(!TS.saveNow()){S.tasks.push(t);a.shift();return false}save();render();return true},
   unremove(id){const a=TS.arch(),i=a.findIndex(x=>x.id===id);if(i<0)return false;const t=a.splice(i,1)[0];delete t.delAt;if(!S.tasks.some(x=>x.id===t.id))S.tasks.push(t);save();render();return true},
   where(t){return `${CATL[t.cat||'general']}${t.due?', '+vDateSay(t.due)+(t.dueTime?' at '+vT12(t.dueTime):''):', no date yet'}`},
-  rem(t){return t.due&&S.notif&&S.notif.deadlines?(t.dueTime?' Reminder set for that time.':' Reminder set for 8 AM that day.'):''}
+  rem(t){if(t.remTime&&t.remDate)return S.notif&&S.notif.deadlines?` Reminder set for ${vT12(t.remTime)} ${vDateSay(t.remDate)}.`:' Reminder saved, but deadline alerts are switched off in Notifications.';return t.due&&S.notif&&S.notif.deadlines?(t.dueTime?' Reminder set for that time.':' Reminder set for 8 AM that day.'):''}
 };
 let VCTX=null,VPEND=null,VAGG=null;
 const vCtx=()=>VCTX&&Date.now()-VCTX.at<600000?S.tasks.find(t=>t.id===VCTX.id)||null:null;
@@ -3441,10 +3465,11 @@ function vDirect(c){
   if(c.kind==='task'||c.kind==='hack'||c.kind==='comev'){
     const title=c.title||(c.kind==='hack'?'Hackathon':'');
     const cat=c.cat||(c.kind==='hack'?'hackathon':c.kind==='comev'?'community':vClassify(title));
-    const r=TS.create({title,cat,due:c.date||null,dueTime:c.time||null,est:c.est,prio:c.prio,src:'voice'});
+    const r=TS.create({title,cat,due:c.date||null,dueTime:c.time||null,remDate:c.remDate,remTime:c.remTime,est:c.est,prio:c.prio,src:'voice'});
     if(r.fail==='storage')return vBanner("I couldn't save that: storage is full or blocked. Nothing was added.");
     if(r.fail)return vBanner('I did not get a task name. Say it again.');
     if(r.dup)VCTX={id:r.dup.id,at:Date.now()};
+    if(r.dup&&c.remTime&&!(r.dup.remTime===c.remTime&&r.dup.remDate===c.remDate)){const sn=TS.patch(r.dup,{remDate:c.remDate,remTime:c.remTime});if(sn)return vSay(`${r.dup.title} was already in your tasks (${TS.where(r.dup)}), so I set its reminder for ${vT12(c.remTime)} ${vDateSay(c.remDate)}.`,()=>TS.restore(sn))}
     if(r.dup&&c.time&&!r.dup.dueTime){const sn=TS.patch(r.dup,{dueTime:c.time});if(sn)return vSay(`${r.dup.title} was already in your tasks (${TS.where(r.dup)}), so I set its time to ${vT12(c.time)} and updated the reminder.`,()=>TS.restore(sn))}
     if(r.dup)return vSay(`That is already in your tasks: ${r.dup.title} (${TS.where(r.dup)}). I did not add a duplicate.`);
     const t=r.task;
@@ -3483,7 +3508,9 @@ vNluMap=function(m){
 function vSplit(t){
   const s=String(t||'').trim();
   const re=/\s*(?:,\s*(?:and\s+|then\s+)?|;\s*|\s+and\s+(?:then\s+|also\s+)?|\s+then\s+|\.\s+)(?=(?:on|by|tomorrow|today|next|this|in|at|remind|schedule|add|i|then|complete|finish|submit|attend|my|the|we)\b)/i;
-  const p=s.split(re).map(x=>x.trim()).filter(Boolean);
+  let p=s.split(re).map(x=>x.trim()).filter(Boolean);
+  /* a reminder-time clause belongs to the task before it: "presentation tomorrow. Remind me at 9 pm today" */
+  {const q=[];for(const x of p){if(q.length&&VRMT.test(x)&&!/^remind/i.test(q[q.length-1]))q[q.length-1]+='. '+x;else q.push(x)}p=q}
   return p.length>1&&p.every(x=>x.split(/\s+/).length>=3)?p:[s];
 }
 async function vOne(text){
@@ -3523,7 +3550,7 @@ for(const [v,c] of [['hacks','hackathon'],['courses','course'],['comms','communi
 function tasksExtra(){
   const t0=today(),chips=`<div class="row" style="flex-wrap:wrap;gap:6px;margin:0 0 10px" role="group" aria-label="Filter by category"><button class="btn sm ${!UI.taskCat?'pri':''}" data-act="taskCat" data-arg="">All</button>${TCATS.map(([k,l])=>`<button class="btn sm ${UI.taskCat===k?'pri':''}" data-act="taskCat" data-arg="${k}">${l}</button>`).join('')}</div>`;
   const up=S.tasks.filter(t=>!t.done&&t.due&&t.due>=t0).sort(cmpTask).slice(0,5);
-  const rem=S.notif&&S.notif.deadlines&&up.length?`<section class="card"><header><h2>Upcoming reminders</h2></header>${up.map(t=>`<div class="row" style="justify-content:space-between;gap:8px;padding:4px 0"><span style="min-width:0">${esc(t.title)} <span class="sm muted">${CATL[t.cat||'general']}</span></span><span class="sm num">${rel(t.due)}${t.dueTime?' · alert '+t.dueTime:' · alert 8:00'}</span></div>`).join('')}<p class="sm faint" style="margin-top:6px">Use "Change alert time" on a task to edit when it reminds you. Moving or finishing a task updates or cancels its reminder.</p></section>`:'';
+  const rem=S.notif&&S.notif.deadlines&&up.length?`<section class="card"><header><h2>Upcoming reminders</h2></header>${up.map(t=>`<div class="row" style="justify-content:space-between;gap:8px;padding:4px 0"><span style="min-width:0">${esc(t.title)} <span class="sm muted">${CATL[t.cat||'general']}</span></span><span class="sm num">${rel(t.due)}${t.remTime&&t.remDate?' · reminder '+vDateSay(t.remDate)+' '+vT12(t.remTime):t.dueTime?' · alert '+t.dueTime:' · alert 8:00'}</span></div>`).join('')}<p class="sm faint" style="margin-top:6px">Use "Change alert time" on a task to edit when it reminds you. Moving or finishing a task updates or cancels its reminder.</p></section>`:'';
   const a=S.archive||[],arc=a.length?`<section class="card"><header><h2>Recently deleted</h2><span class="pill">${a.length}</span></header>${a.slice(0,5).map(t=>`<div class="row" style="justify-content:space-between;gap:8px;padding:4px 0"><span style="min-width:0">${esc(t.title)} <span class="sm muted">${CATL[t.cat||'general']}</span></span><button class="btn sm" data-act="taskRestore" data-arg="${esc(t.id)}">Restore</button></div>`).join('')}</section>`:'';
   return {chips,rem,arc};
 }
@@ -3547,6 +3574,18 @@ document.addEventListener('change',e=>{const el=e.target;if(!el||!el.dataset)ret
     if(!TS.saveNow()){S.tasks.pop();render();toast("Could not save: storage is full or blocked");return}
     save();render();toast(`Added to ${CATL[t.cat]}`)}
 }}
+
+/* ===================== quick voice capture card (Today) ===================== */
+function quickCapCard(){
+  const can=!!SR||(typeof vCanCloud==='function'&&vCanCloud());
+  return `<section class="card" id="qcap" aria-labelledby="qc-h" style="margin-bottom:14px"><header><h2 id="qc-h">Quick capture</h2></header>
+   <button class="btn pri" id="qc-mic" data-act="voice" style="width:100%;min-height:64px;font-size:19px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px" ${can?'':'disabled'}>${ico('mic',26)}<span id="qc-mt">Tap to speak</span></button>
+   <p class="sm muted" style="margin-top:8px">${can?'Say it once, for example: <b>Presentation tomorrow, remind me at 9 pm today</b>. I will save the task, set the reminder and tell you what I added.':'Voice input is not supported in this browser. Use Chrome on Android, or type below.'}</p>
+   <form data-form="quickCap" class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:end"><label class="f" style="flex:1;min-width:200px">Or type it instead<input class="in" id="qc-in" name="q" autocomplete="off" maxlength="300" placeholder="Presentation tomorrow, remind me at 9 pm today" aria-label="Type a task"></label><button class="btn">Add</button></form></section>`;
+}
+{const _vq=VIEWS.today;VIEWS.today=()=>{const h=_vq(),c=quickCapCard(),k='<section class="hero fadein">';return h.includes(k)?h.replace(k,c+k):c+h}}
+Object.assign(F,{quickCap:(d,fm)=>{const q=String(d.get('q')||'').trim();if(!q){toast('Type or say a task first.');return}try{fm.reset()}catch(e){}vRun(q)}});
+setInterval(()=>{const l=document.getElementById('qc-mt'),b=document.getElementById('qc-mic');if(!l||!b)return;const on=!!VOREC;l.textContent=on?'Listening... tap to stop':'Tap to speak';b.classList.toggle('on',on)},400);
 
 /* ===================== study room invitations (real, through the AuraStudent server) ===================== */
 const BC_ALPHA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
