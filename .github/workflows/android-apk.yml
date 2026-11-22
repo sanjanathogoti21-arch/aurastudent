@@ -6,6 +6,8 @@ on:
       - 'native/**'
       - 'index.html'
       - '.github/workflows/android-apk.yml'
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -43,3 +45,10 @@ jobs:
         with:
           name: AuraStudent-debug-apk
           path: native/android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish APK to the Releases page (public download link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp native/android/app/build/outputs/apk/debug/app-debug.apk AuraStudent.apk
+          gh release delete android-latest --yes --cleanup-tag || true
+          gh release create android-latest AuraStudent.apk --target "$GITHUB_SHA" --title "AuraStudent for Android (latest test build)" --notes "Debug build for testing. Open the file on your phone to install; allow installs from this source if Android asks. Not yet verified on a real phone: see Profile > Hands-free after install."
