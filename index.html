@@ -2801,7 +2801,7 @@ Object.assign(A,{
 
 /* ================= Voice input: tap the mic, say one sentence ================= */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const VC=()=>{const d={wake:false,speak:true,lang:'auto'};if(!S.voice||typeof S.voice!=='object')S.voice={};for(const k in d)if(S.voice[k]===undefined)S.voice[k]=d[k];return S.voice};
+const VC=()=>{const d={wake:false,speak:true,dbl:true,lang:'auto'};if(!S.voice||typeof S.voice!=='object')S.voice={};for(const k in d)if(S.voice[k]===undefined)S.voice[k]=d[k];return S.voice};
 const V_NUM={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12};
 const V_NW='one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve';
 const V_MON='january|february|march|april|may|june|july|august|september|october|november|december';
@@ -3281,6 +3281,7 @@ Object.assign(A,{
  voiceUndo:()=>{const u=VU;if(u){VU=null;try{u()}catch(e){}}},
  voiceClose:()=>{const b=$('#vbanner');if(b)b.classList.remove('on')},
  voiceSpeak:()=>{const v=VC();v.speak=!v.speak;save();render()},
+ voiceDbl:()=>{const v=VC();v.dbl=!v.dbl;save();render()},
  voiceWake:()=>{const v=VC();if(!SR){toast('This browser does not support voice input. Use Chrome on Android.');return}v.wake=!v.wake;save();if(v.wake){vWakeStart();toast('Hey Aura is on while the app is open')}else{vWakeStop();toast('Hey Aura is off')}render()}
 });
 function voiceCard(){
@@ -3289,6 +3290,7 @@ function voiceCard(){
    <p class="sm muted">Tap the mic button on any screen and speak. Say things like "open tasks", "add task physics lab tomorrow at 5 pm" or "what is on today". Anything it does not recognise goes to the Aura assistant.</p>
    <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Language you speak</div><div class="sm muted">Auto works for most people. Pick one if it keeps mishearing you.</div></div><select class="in" style="width:auto" data-vlang="1" aria-label="Voice language">${[['auto','Auto detect'],['en','English'],['hi','Hindi'],['te','Telugu'],['ta','Tamil'],['kn','Kannada'],['ml','Malayalam'],['mr','Marathi'],['bn','Bengali'],['gu','Gujarati'],['pa','Punjabi'],['ur','Urdu']].map(([k,l])=>`<option value="${k}" ${v.lang===k?'selected':''}>${l}</option>`).join('')}</select></div>
    <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Speak replies aloud</div></div><button class="switch" role="switch" aria-checked="${v.speak}" aria-label="Speak replies aloud" data-act="voiceSpeak"></button></div>
+   <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Double-tap to speak</div><div class="sm muted">On the Today screen, double-tap an empty area to start the microphone.</div></div><button class="switch" role="switch" aria-checked="${v.dbl}" aria-label="Double-tap to speak" data-act="voiceDbl"></button></div>
    <details style="margin-top:8px"><summary class="sm" style="cursor:pointer;font-weight:650">What you can say</summary><div class="sm" style="line-height:1.6;margin-top:6px">
     <p><b>Open a screen:</b> "open tasks", "go to calendar", "show courses", "open hackathons".</p>
     <p><b>Add a task or reminder:</b> "add task submit lab report tomorrow at 9 am", "remind me to call the bank on Friday at 5 pm", "add task read chapter 3 for 2 hours".</p>
@@ -3304,6 +3306,7 @@ function voiceCard(){
 {const _vp11=VIEWS.profile;VIEWS.profile=()=>_vp11()+voiceCard()}
 {const st=document.createElement('style');st.textContent=`
 .vfab{position:fixed;right:max(18px,env(safe-area-inset-right,0px));bottom:calc(158px + env(safe-area-inset-bottom,0px));width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:grid;place-items:center;padding:0;box-shadow:0 8px 22px -8px rgba(0,0,0,.45);z-index:45;cursor:pointer}
+.qcpulse{animation:vp 1.2s ease-in-out 4}
 .vfab:hover{border-color:var(--accent)}.vfab.on{background:var(--accent);color:var(--on-accent,#fff);border-color:var(--accent);animation:vp 1.2s ease-in-out infinite}
 @keyframes vp{50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 30%,transparent)}}
 @media (max-width:860px){.vfab{bottom:calc(220px + env(safe-area-inset-bottom,0px))}}
@@ -3580,11 +3583,25 @@ function quickCapCard(){
   const can=!!SR||(typeof vCanCloud==='function'&&vCanCloud());
   return `<section class="card" id="qcap" aria-labelledby="qc-h" style="margin-bottom:14px"><header><h2 id="qc-h">Quick capture</h2></header>
    <button class="btn pri" id="qc-mic" data-act="voice" style="width:100%;min-height:64px;font-size:19px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px" ${can?'':'disabled'}>${ico('mic',26)}<span id="qc-mt">Tap to speak</span></button>
-   <p class="sm muted" style="margin-top:8px">${can?'Say it once, for example: <b>Presentation tomorrow, remind me at 9 pm today</b>. I will save the task, set the reminder and tell you what I added.':'Voice input is not supported in this browser. Use Chrome on Android, or type below.'}</p>
+   <p class="sm muted" style="margin-top:8px">${can?'Say it once, for example: <b>Presentation tomorrow, remind me at 9 pm today</b>. I will save the task, set the reminder and tell you what I added.'+(VC().dbl?' Tip: you can also double-tap an empty area of this screen.':''):'Voice input is not supported in this browser. Use Chrome on Android, or type below.'}</p>
    <form data-form="quickCap" class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:end"><label class="f" style="flex:1;min-width:200px">Or type it instead<input class="in" id="qc-in" name="q" autocomplete="off" maxlength="300" placeholder="Presentation tomorrow, remind me at 9 pm today" aria-label="Type a task"></label><button class="btn">Add</button></form></section>`;
 }
 {const _vq=VIEWS.today;VIEWS.today=()=>{const h=_vq(),c=quickCapCard(),k='<section class="hero fadein">';return h.includes(k)?h.replace(k,c+k):c+h}}
 Object.assign(F,{quickCap:(d,fm)=>{const q=String(d.get('q')||'').trim();if(!q){toast('Type or say a task first.');return}try{fm.reset()}catch(e){}vRun(q)}});
+/* double-tap an empty part of Today to start listening (only while the app is open) */
+{let last=0,lx=0,ly=0;
+ document.addEventListener('pointerup',e=>{
+  if(UI.view!=='today'||!VC().dbl||VOREC||(e.pointerType==='mouse'&&e.button!==0))return;
+  const el=e.target;if(!el||!el.closest||el.closest('button,a,input,textarea,select,label,summary,details,form,[data-act],[data-form],[role=button],[role=switch],#modal,#vbanner,#rems,.vfab,.orb,nav,header'))return;
+  if(String(window.getSelection&&window.getSelection()||'').length>0)return;
+  const n=Date.now();
+  if(n-last<350&&Math.abs(e.clientX-lx)<40&&Math.abs(e.clientY-ly)<40){last=0;voiceTap()}else{last=n;lx=e.clientX;ly=e.clientY}
+ },{passive:true});}
+/* opened from the home-screen shortcut (?voice=1): go to Today and try to start listening; if the browser needs a tap, highlight the big button */
+try{if(new URLSearchParams(location.search).get('voice')==='1'){
+  setTimeout(()=>{try{history.replaceState(null,'',location.pathname)}catch(e){}go('today');
+    setTimeout(()=>{voiceTap();
+      setTimeout(()=>{if(!VOREC){const b=document.getElementById('qc-mic');if(b){b.classList.add('qcpulse');try{b.scrollIntoView({block:'center'})}catch(e){}}}},3500)},400)},900)}}catch(e){}
 setInterval(()=>{const l=document.getElementById('qc-mt'),b=document.getElementById('qc-mic');if(!l||!b)return;const on=!!VOREC;l.textContent=on?'Listening... tap to stop':'Tap to speak';b.classList.toggle('on',on)},400);
 
 /* ===================== study room invitations (real, through the AuraStudent server) ===================== */
