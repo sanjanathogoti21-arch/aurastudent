@@ -27,6 +27,15 @@ jobs:
           npx cap add android
           node patch-android.js
           npx cap sync android
+      - name: Download offline speech model (Vosk small English-India, about 36 MB)
+        run: |
+          D=native/android/app/src/main/assets/model
+          mkdir -p $D /tmp/vm
+          curl -fsSL -o /tmp/vm/m.zip https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip
+          unzip -q /tmp/vm/m.zip -d /tmp/vm
+          cp -r /tmp/vm/vosk-model-small-en-in-0.4/* $D/
+          cat /proc/sys/kernel/random/uuid > $D/uuid
+          ls $D
       - name: Build debug APK
         working-directory: native/android
         run: ./gradlew assembleDebug --no-daemon
