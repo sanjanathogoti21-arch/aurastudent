@@ -2877,7 +2877,11 @@ function vRemindSplit(t){
   const dd=vDate(clause),tm=vTime(dd.rest);
   if(!tm.time&&!dd.date)return null;
   let time=tm.time||'08:00',date=dd.date;
-  if(!date){const now=new Date(),nm=now.getHours()*60+now.getMinutes();date=mins(time)>nm?today():addDays(today(),1)}
+  const now=new Date(),nm=now.getHours()*60+now.getMinutes();
+  /* ask instead of guessing: a bare hour ("at 9") or a time that has already passed today */
+  if(tm.time&&/\d/.test(dd.rest)&&!/(am|pm|a\.m|p\.m|noon|midnight|:\d\d|half|quarter)/i.test(dd.rest))return {ambig:'ampm',rest:m[1].trim()};
+  if(date===today()&&mins(time)<=nm)return {ambig:'past',rest:m[1].trim()};
+  if(!date){date=mins(time)>nm?today():addDays(today(),1)}
   return {rest:m[1].trim(),date,time};
 }
 function vParse(raw){
@@ -2885,6 +2889,7 @@ function vParse(raw){
   t=t.replace(/^(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b\s*/i,'').replace(/^(?:please|can you|could you|would you|will you|i want you to|i would like to|i'd like to|i want to)\s+/i,'').replace(/\s+please$/i,'').trim();
   if(!t)return {kind:'empty'};
   {const rx=vRemindSplit(t);
+   if(rx&&rx.ambig)return {kind:'clarify',why:rx.ambig,q:raw};
    if(rx){let c=vParse(rx.rest);if(c.kind==='ask'||c.kind==='empty')c=vParse('add task '+rx.rest);
      if(c.kind==='task'){c.remDate=rx.date;c.remTime=rx.time;return c}}}
   let m;
@@ -3028,7 +3033,8 @@ function vExec(c){
    }
    case 'summary':return vSay(vDaySummary(c.date));
    case 'next':{const t0=today(),n=nowM(),e=occ(t0).filter(x=>x.type!=='rest'&&mins(x.start)>n).sort((a,b)=>mins(a.start)-mins(b.start))[0];return vSay(e?`Next is ${e.title} at ${vT12(e.start)}.`:'Nothing else on your calendar today.')}
-   case 'ask':{if(document.getElementById('vcap')){vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task. Tap the big button and try again, for example: Presentation tomorrow, remind me at 9 pm today. Or type it below.`);return}
+   case 'clarify':{vBanner(c.why==='ampm'?'Is that reminder in the morning or the evening? Say it again with am or pm, for example: remind me at 9 pm today.':'That reminder time has already passed today. Say a later time or another day, for example: remind me at 9 am tomorrow.');vcapPrefill(c.q);return}
+   case 'ask':{if(document.getElementById('vcap')){vcapPrefill(c.q);vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task. Tap the big button and try again, for example: Presentation tomorrow, remind me at 9 pm today. Or type it below.`);return}
    vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task or event${VNW?' ('+VNW+')':''}, so I am asking Aura instead.`);try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
   }
 }
@@ -3109,7 +3115,7 @@ function vNluMap(m){
 async function vRun(raw,alts){
   const first=String(raw||'').trim();
   /* a task with its own reminder time is handled by the rules parser, which keeps due date and reminder moment separate */
-  try{const c0=first&&vParse(first);if(c0&&c0.kind==='task'&&c0.remTime)return vRunRules(raw,alts)}catch(e){}
+  try{const c0=first&&vParse(first);if(c0&&((c0.kind==='task'&&c0.remTime)||c0.kind==='clarify'))return vRunRules(raw,alts)}catch(e){}
   if(first&&VONLU&&!/REPLACE_WITH/.test(PUSH_SERVER)){
     vBanner('Understanding...','',true);
     const c=vNluMap(await vNlu(first));
@@ -3607,12 +3613,15 @@ function vcapOpen(){
   d.style.cssText='position:fixed;inset:0;z-index:45;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;overflow:auto';
   d.innerHTML=`<div style="font-weight:750;font-size:20px">Voice task</div>
    <button class="btn pri" id="vc-mic" data-act="voice" style="width:min(440px,100%);min-height:128px;font-size:26px;font-weight:750;display:flex;align-items:center;justify-content:center;gap:12px;border-radius:24px" ${can?'':'disabled'}>${ico('mic',40)}<span id="vc-mt">Tap to speak</span></button>
-   <p id="vc-st" role="status" aria-live="polite" style="font-size:18px;font-weight:650;max-width:440px;min-height:48px;margin:0">${can?'Starting the microphone...':'Voice input is not supported in this browser. Type the task below.'}</p>
+   <p id="vc-st" role="status" aria-live="polite" style="font-size:18px;font-weight:650;max-width:440px;min-height:48px;margin:0">${can?'Starting the microphone. AuraStudent uses it only to hear your task.':'Voice input is not supported in this browser. Type the task below.'}</p>
    <p class="sm muted" style="max-width:440px;margin:0">Say a task and when to remind you, for example: <b>Presentation tomorrow. Remind me at 9 pm today.</b></p>
    <form data-form="quickCap" class="row" style="gap:8px;width:min(440px,100%);align-items:end"><label class="f" style="flex:1">Or type it instead<input class="in" id="vc-in" name="q" autocomplete="off" maxlength="300" placeholder="Presentation tomorrow. Remind me at 9 pm today" aria-label="Type a task"></label><button class="btn">Add</button></form>
    <button class="btn ghost" data-act="vcapClose">Open AuraStudent</button>`;
   document.body.appendChild(d);
+  setTimeout(()=>{try{document.getElementById('vc-mic').focus()}catch(e){}},50);
 }
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('vcap')&&!document.getElementById('modal').innerHTML)A.vcapClose()});
+function vcapPrefill(t){const i=document.getElementById('vc-in');if(i&&t)i.value=String(t).slice(0,300)}
 function vcapSt(text){const e=document.getElementById('vc-st');if(e)e.textContent=text}
 {const _vb2=vBanner;vBanner=function(text,undo,live){_vb2.apply(this,arguments);vcapSt(text)}}
 Object.assign(A,{vcapClose:()=>{try{VOREC&&VOREC.stop()}catch(e){}const d=document.getElementById('vcap');if(d)d.remove();go('today')}});
@@ -3621,7 +3630,7 @@ try{if(new URLSearchParams(location.search).get('voice')==='1'){
   try{history.replaceState(null,'',location.pathname)}catch(e){}
   vcapOpen();
   setTimeout(()=>{voiceTap();
-    setTimeout(()=>{if(!VOREC){const b=document.getElementById('vc-mic');if(b){b.classList.add('qcpulse');if(!/blocked|not supported|No microphone|another app|could not/i.test((document.getElementById('vc-st')||{}).textContent||''))vcapSt('Tap the big button, then speak.')}}},3500)},700)}}catch(e){}
+    setTimeout(()=>{if(!VOREC){const b=document.getElementById('vc-mic');if(b){b.classList.add('qcpulse');if(/^Starting the microphone/.test((document.getElementById('vc-st')||{}).textContent||''))vcapSt('Tap the big button, then speak.')}}},3500)},700)}}catch(e){}
 setInterval(()=>{const l=document.getElementById('qc-mt'),b=document.getElementById('qc-mic');if(!l||!b)return;const on=!!VOREC;l.textContent=on?'Listening... tap to stop':'Tap to speak';b.classList.toggle('on',on)},400);
 
 /* ===================== study room invitations (real, through the AuraStudent server) ===================== */
