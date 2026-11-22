@@ -3631,6 +3631,26 @@ try{if(new URLSearchParams(location.search).get('voice')==='1'){
   vcapOpen();
   setTimeout(()=>{voiceTap();
     setTimeout(()=>{if(!VOREC){const b=document.getElementById('vc-mic');if(b){b.classList.add('qcpulse');if(/^Starting the microphone/.test((document.getElementById('vc-st')||{}).textContent||''))vcapSt('Tap the big button, then speak.')}}},3500)},700)}}catch(e){}
+/* ---- Android app only (Capacitor wrapper in /native): native reminders + long-press "Voice task" shortcut. Does nothing in a normal browser. ---- */
+(function(){
+  const C=window.Capacitor;if(!(C&&C.isNativePlatform&&C.isNativePlatform()))return;
+  document.documentElement.dataset.native='1';
+  const P=C.Plugins||{};
+  const openVoice=()=>{vcapOpen();setTimeout(()=>{voiceTap()},700)};
+  try{if(P.App){P.App.getLaunchUrl().then(r=>{if(r&&/^aurastudent:\/\/voice/.test(r.url||''))openVoice()}).catch(()=>{});
+    P.App.addListener('appUrlOpen',e=>{if(/^aurastudent:\/\/voice/.test((e&&e.url)||''))openVoice()})}}catch(e){}
+  /* WebView cannot receive web push, so reminders are handed to Android as scheduled local notifications */
+  let last='';
+  async function sched(){
+    try{const L=P.LocalNotifications;if(!L)return;
+      let perm=await L.checkPermissions();if(perm.display!=='granted'){perm=await L.requestPermissions();if(perm.display!=='granted')return}
+      const plan=ntfyPlan().slice(0,60),sig=plan.map(p=>p.seq+p.sig).join(',');if(sig===last)return;last=sig;
+      const pend=await L.getPending();if(pend.notifications&&pend.notifications.length)await L.cancel({notifications:pend.notifications});
+      if(plan.length)await L.schedule({notifications:plan.map(p=>({id:(parseInt(p.seq.slice(2),36)%2000000000)||1,title:p.title,body:p.msg,schedule:{at:new Date(p.at),allowWhileIdle:true}}))});
+    }catch(e){last=''}
+  }
+  setTimeout(sched,3500);setInterval(sched,60000);document.addEventListener('visibilitychange',()=>{if(document.hidden)sched()});
+})();
 setInterval(()=>{const l=document.getElementById('qc-mt'),b=document.getElementById('qc-mic');if(!l||!b)return;const on=!!VOREC;l.textContent=on?'Listening... tap to stop':'Tap to speak';b.classList.toggle('on',on)},400);
 
 /* ===================== study room invitations (real, through the AuraStudent server) ===================== */

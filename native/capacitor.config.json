@@ -1,0 +1,9 @@
+{
+  "appId": "app.aurastudent.planner",
+  "appName": "AuraStudent",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "plugins": {
+    "LocalNotifications": { "smallIcon": "ic_stat_icon_config_sample", "iconColor": "#0B8A7B" }
+  }
+}
