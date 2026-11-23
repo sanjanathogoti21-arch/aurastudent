@@ -165,6 +165,35 @@ JSON only, no commentary.`;
     }
     return json(env, { error: 'The understanding service failed. Try again.' }, 502);
   }
+  if (url.pathname === '/chat') {
+    if (!env.AI) return json(env, { error: 'Chat is not set up on the server yet.' }, 501);
+    if (limited(ip, 'chat', 20, 60000) || limited(ip, 'chatday', 300, 86400e3)) return json(env, { error: 'Too many chat messages. Wait a minute and try again.' }, 429);
+    const text = str(b.text, 500).trim();
+    if (text.length < 1) return json(env, { error: 'No text.' }, 400);
+    const when = str(b.when, 60).replace(/[^A-Za-z0-9 ,:\-]/g, '');
+    const tasks = (Array.isArray(b.tasks) ? b.tasks : []).slice(0, 25).map(t => str(t, 140).replace(/[\r\n]+/g, ' ')).filter(Boolean);
+    const hist = (Array.isArray(b.history) ? b.history : []).slice(-6).map(h => ({ role: h && h.r === 'a' ? 'assistant' : 'user', content: str(h && h.t, 400) })).filter(h => h.content);
+    const sys = `You are Aura, a warm, upbeat voice assistant inside a student planner app, talking with a college student in India. Talk like a supportive friend who plans their day: natural, short, encouraging, never robotic. This is spoken aloud, so use 1 to 3 short sentences, no lists, no markdown, no emojis. Reply in the same language the student used (English, Hindi, Telugu, or a mix).
+The current date and time is ${when || 'unknown'} (India).
+The student's open tasks (nearest deadline first) are:
+${tasks.length ? tasks.map((t, i) => (i + 1) + '. ' + t).join('\n') : '(no open tasks)'}
+Rules:
+- Use ONLY the tasks listed above. Never invent a task, deadline, or time. If you do not know, say so.
+- If they are stressed or overwhelmed, acknowledge the feeling in one sentence, then give ONE small next step based on their nearest deadline.
+- If they ask what to do first, suggest an order using the deadlines above and say it is a suggestion. Do not guess how long things take.
+- You cannot add, change, or finish tasks in this reply. If they want that, tell them to say it like "add task physics lab tomorrow at 4 pm" or "mark physics lab done".
+- Never say you saved or changed anything.
+- Stay on planning, studying and feeling organised. For anything else, answer briefly and kindly and steer back.`;
+    const messages = [{ role: 'system', content: sys }].concat(hist, [{ role: 'user', content: text }]);
+    for (const m of ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-3.1-8b-instruct']) {
+      try {
+        const r = await env.AI.run(m, { messages, max_tokens: 160, temperature: 0.6 });
+        const reply = String((r && (r.response || (r.result && r.result.response))) || '').replace(/[*_#`<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 500);
+        if (reply) return json(env, { reply });
+      } catch (e) { /* try the next model */ }
+    }
+    return json(env, { error: 'The chat service failed. Try again.' }, 502);
+  }
   await ensure(env);
 
   if (isSync) {
