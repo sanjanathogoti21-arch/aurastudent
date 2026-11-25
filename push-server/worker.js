@@ -56,6 +56,15 @@ async function ensure(env) {
 
 const cors = (env) => ({ 'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN || '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Max-Age': '86400', Vary: 'Origin' });
 const json = (env, obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...cors(env) } });
+// Tells the app WHY an AI call failed (for example the free daily limit) instead of a vague message.
+function aiFail(env, e, fallback) {
+  const m = String((e && e.message) || e || '');
+  const quota = /4006|neurons|quota|daily|limit|capacity/i.test(m);
+  return json(env, {
+    error: quota ? 'The free AI allowance for today is used up. It resets around 5:30 am India time. Typing still works.' : fallback,
+    detail: m.replace(/[\r\n]+/g, ' ').slice(0, 140)
+  }, quota ? 429 : 502);
+}
 const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(s)))].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
 const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
 
@@ -94,7 +103,7 @@ async function handle(request, env) {
       if (lang === 'en') opts.initial_prompt = 'Aura. Add task, schedule class, mark done, open tasks, what is on today, smart plan, tomorrow at 5 pm, physics lab, assignment, hackathon.';
       const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', opts);
       return json(env, { text: String((r && r.text) || '').trim().slice(0, 500) });
-    } catch (e) { return json(env, { error: 'The speech service failed. Try again.' }, 502); }
+    } catch (e) { return aiFail(env, e, 'The speech service failed. Try again.'); }
   }
   if (url.pathname === '/nlu') {
     if (!env.AI) return json(env, { error: 'Understanding is not set up on the server yet.' }, 501);
