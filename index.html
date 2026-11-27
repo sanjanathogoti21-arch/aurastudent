@@ -1921,6 +1921,10 @@ function hackModal(h){
    <label class="f">Where<input class="in" id="hk-place" name="place" value="${esc(e.place||'')}" placeholder="Venue or Online"></label>
    <label class="f">Event page, optional<input class="in" id="hk-link" name="link" value="${esc(e.link||'')}" placeholder="https://..."></label>
    ${h?'':'<p class="sm muted" style="grid-column:1/-1">Dates start empty and marked Needs verification. Add each date when you know it, with its source.</p>'}
+   <label class="f">Started or starts<input class="in" type="date" id="hk-start" name="start" value="${esc(e.start||'')}"></label>
+   <label class="f">Ends<input class="in" type="date" id="hk-end" name="end" value="${esc(e.end||'')}"></label>
+   <label class="f">Daily reminder at, optional<input class="in" type="time" id="hk-daily" name="daily" value="${esc((e.daily&&e.daily.time)||'')}"></label>
+   <p class="sm muted" style="grid-column:1/-1">A daily reminder runs from the start date to the end date, and stops when every milestone is ticked.</p>
    <div id="hk-err" class="sm" style="grid-column:1/-1;color:var(--bad);font-weight:600" role="alert"></div>
    <div class="row" style="grid-column:1/-1;justify-content:flex-end"><button type="button" class="btn" data-act="closeModal">Cancel</button><button class="btn pri">${h?'Save':'Add hackathon'}</button></div></form>`);
 }
@@ -1928,8 +1932,11 @@ F.hackSave=(d,f)=>{
   const title=d.get('title').trim(),link=d.get('link').trim();if(!title)return;
   if(link&&!urlOk(link)){$('#hk-err').textContent='The link must start with http:// or https://.';return}
   const id=f.dataset.id;
-  if(id){const h=S.hacks.find(x=>x.id===id);if(h){h.title=title;h.place=d.get('place').trim();h.link=link}}
-  else S.hacks.push({id:'h'+uid(),title,place:d.get('place').trim(),link,milestones:MSDEF.map(([key,label,opt])=>({id:'m'+uid(),key,label,optional:opt,enabled:true,date:null,time:'',dateStatus:'verify',link:'',note:'',done:false,remind:'1d'}))});
+  const st=d.get('start')||'',en=d.get('end')||'',dl=d.get('daily')||'';
+  if(st&&en&&en<st){$('#hk-err').textContent='The end date is before the start date.';return}
+  const extra=h=>{h.start=st||undefined;h.end=en||undefined;if(!st)delete h.startApprox;if(!en)delete h.endApprox;if(dl)h.daily={time:dl};else delete h.daily};
+  if(id){const h=S.hacks.find(x=>x.id===id);if(h){h.title=title;h.place=d.get('place').trim();h.link=link;if(st!==(h.start||''))delete h.startApprox;if(en!==(h.end||''))delete h.endApprox;extra(h)}}
+  else{const h=hkNew(title);h.place=d.get('place').trim();h.link=link;extra(h);S.hacks.push(h)}
   save();closeM();render();toast(id?'Saved':'Hackathon added. Add each date when you know it.');
 };
 function msModal(hid,mid,verify){
@@ -1963,11 +1970,19 @@ F.msAdd=(d,f)=>{
   h.milestones.push({id:'m'+uid(),key:'custom',label,custom:true,enabled:true,date:d.get('date')||null,time:'',dateStatus:'verify',link:'',note:'',done:false,remind:'1d'});
   save();render();toast('Milestone added. Open Edit to confirm its date and add a source.');
 };
+function hkInfo(h){
+  const b=[];if(h.start)b.push(`${h.start>today()?'Starts':'Started'} ${hkFd(h.start)}${h.startApprox?' (not exact)':''}`);
+  if(h.end)b.push(`Ends ${hkFd(h.end)}${h.endApprox?' (end of the month, not exact)':''}`);
+  const sp=hkSpan(h.start,h.end);if(sp)b.push(sp);
+  if(h.daily&&h.daily.time)b.push(hkActive(h)?`Daily reminder at ${vT12(h.daily.time)}`:`Daily reminder at ${vT12(h.daily.time)} (paused)`);
+  return b.length?`<p class="sm" style="margin:0 0 10px">${esc(b.join(' \u00b7 '))}</p>`:'';
+}
 function hackCard(h){
   const nx=nextMs(h),t0=today(),hidden=h.milestones.filter(m=>!m.enabled);
   const nxHTML=nx?`<div style="background:var(--accent-soft);border-radius:12px;padding:12px 14px;margin-bottom:12px"><div class="sm" style="font-weight:700;color:var(--accent-ink)">Next milestone</div><div style="font-size:18px;font-weight:700;margin:2px 0">${esc(nx.label)}${nx.date?` <span class="sm muted" style="font-weight:600">· ${nx.date<t0?'Overdue, was '+fd(nx.date):rel(nx.date)}</span>`:''}</div><div class="row" style="gap:8px;flex-wrap:wrap">${dateLine(nx)}</div></div>`:`<div class="sm muted" style="margin-bottom:12px">${h.milestones.some(m=>m.enabled)?'All milestones are done.':'No active milestones.'}</div>`;
   return `<section class="card"><header><div><h2>${esc(h.title)}</h2><div class="sm muted">${h.place?esc(h.place):''}${h.link&&safeLink(h.link)?`${h.place?' · ':''}<a href="${esc(h.link)}" target="_blank" rel="noopener noreferrer">${esc(host(h.link))}</a>`:''}</div></div>
    <div class="row"><button class="btn sm" data-act="hackEdit" data-arg="${esc(h.id)}">Edit</button><button class="btn sm ${UI.delHack===h.id?'bad':'ghost'}" data-act="hackDel" data-arg="${esc(h.id)}">${UI.delHack===h.id?'Confirm delete':'Delete'}</button></div></header>
+   ${hkInfo(h)}
    ${nxHTML}
    ${h.milestones.filter(m=>m.enabled).map(m=>`<div class="logrow"><div style="display:flex;gap:10px;min-width:0;flex:1"><input type="checkbox" ${m.done?'checked':''} data-act="msDone" data-arg="${esc(h.id)}|${esc(m.id)}" aria-label="Mark ${esc(m.label)} done" style="margin-top:4px"><div style="min-width:0"><div style="font-weight:650;${m.done?'text-decoration:line-through;color:var(--ink-3)':''}">${esc(m.label)}${m.optional?' <span class="pill">Optional</span>':''}${m.custom?' <span class="pill">Custom</span>':''}</div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:2px">${dateLine(m)}</div></div></div>
     <div class="row msctl"><select class="in" data-msrem="${esc(h.id)}|${esc(m.id)}" aria-label="Reminder for ${esc(m.label)}" style="width:auto">${REMOPT.map(([k,v])=>`<option value="${k}" ${m.remind===k?'selected':''}>${v}</option>`).join('')}</select>
@@ -2498,6 +2513,23 @@ function courseRems(){
     else if(d===1&&S.notif.lead!=='same')fireRem(`cd1:${c.id}:${t0}`,`Course ends tomorrow: ${c.name}`,`${crsPct(c)}% done.`)}
 }
 {const _c6=checkReminders;checkReminders=function(){_c6();try{taskTimeRems();sugRems();courseRems()}catch(e){}}}
+/* daily hackathon reminders: in the app, in the Reminders list, and in the phone alert plan */
+function hackDailyRems(){
+  const t0=today(),n=nowM();
+  for(const h of S.hacks){if(!hkActive(h,t0))continue;const at=mins(h.daily.time);
+    if(n>=at&&n<at+120)fireRem(`hd:${h.id}:${t0}`,h.title,`${hkNextLabel(h)} is next. Open Hackathons to tick what you have done.`)}
+}
+{const _c7=checkReminders;checkReminders=function(){_c7();try{hackDailyRems()}catch(e){}}}
+{const _ur=upcomingRems;upcomingRems=function(){const out=_ur(),n=nowM(),t0=today();
+  try{for(const h of S.hacks)if(hkActive(h,t0)&&mins(h.daily.time)>n)out.push({txt:h.title,sub:`${hkNextLabel(h)} is next`,when:`Daily at ${h.daily.time}`})}catch(e){}return out}}
+{const _np=ntfyPlan;ntfyPlan=function(){const out=_np(),now=Date.now(),horizon=now+NTFY_MAX_H*3600e3,t0=today(),seen=new Set(out.map(o=>o.seq));
+  try{for(const h of S.hacks){for(let i=0;i<=4;i++){const day=addDays(t0,i);if(!hkActive(h,day))continue;
+    const at=atMs(day,mins(h.daily.time));if(!(at>now+20000&&at<horizon))continue;
+    const seq='au'+hash36(`hd:${h.id}:${day}`);if(seen.has(seq))continue;seen.add(seq);
+    const body=`${hkNextLabel(h)} is next.`,tt=detailsOn()?h.title:GEN_TITLE,mm=detailsOn()?body:GEN_MSG;
+    out.push({seq,at,title:tt,msg:mm,sig:hash36(at+'|'+(detailsOn()?'d':'g')+'|'+(detailsOn()?tt+'|'+mm:''))})}}}catch(e){}
+  return out.sort((a,b)=>a.at-b.at)}}
+
 {const _np=ntfyPlan;ntfyPlan=function(){
   const out=_np(),now=Date.now(),horizon=now+NTFY_MAX_H*3600e3,lead=+S.notif.eventLead||15,seen=new Set(out.map(o=>o.seq));
   const add=(base,at,title,body)=>{if(!(at>now+20000&&at<horizon))return;const seq='au'+hash36(base);if(seen.has(seq))return;seen.add(seq);const t=detailsOn()?title:GEN_TITLE,m=detailsOn()?body:GEN_MSG;out.push({seq,at,title:t,msg:m,sig:hash36(at+'|'+(detailsOn()?'d':'g')+'|'+(detailsOn()?t+'|'+m:''))})};
@@ -2888,6 +2920,7 @@ function vParse(raw){
   let t=vNorm(raw);
   t=t.replace(/^(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b\s*/i,'').replace(/^(?:please|can you|could you|would you|will you|i want you to|i would like to|i'd like to|i want to)\s+/i,'').replace(/\s+please$/i,'').trim();
   if(!t)return {kind:'empty'};
+  {const hk=hkParse(t,raw);if(hk)return hk}
   {const rx=vRemindSplit(t);
    if(rx&&rx.ambig)return {kind:'clarify',why:rx.ambig,q:raw};
    if(rx){let c=vParse(rx.rest);if(c.kind==='ask'||c.kind==='empty')c=vParse('add task '+rx.rest);
@@ -2944,6 +2977,143 @@ function vParse(raw){
   for(const [v,re] of V_VIEWS)if(re.test(target))return {kind:'nav',view:v};
   return {kind:'ask',q:raw};
 }
+/* ---- Hackathons by voice: dates, milestone ticks and a daily reminder, all from one sentence ---- */
+const HK_MN='jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
+const HK_MI=w=>['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(String(w).toLowerCase().slice(0,3));
+const HK_LBL={registration:'Registration',team:'Team formation',submission:'Submission'};
+function hkIso(y,mo,d){const dt=new Date(y,mo,d);return dt.getFullYear()===y&&dt.getMonth()===mo&&dt.getDate()===d?`${y}-${n2(mo+1)}-${n2(d)}`:null}
+/* a date from a short phrase. mode "past" picks the most recent matching date, "future" the next one */
+function hkDate(s,mode){
+  s=String(s||'').toLowerCase();const t0=today(),[Y,M,D]=t0.split('-').map(Number);let m;
+  if(/\btoday\b/.test(s))return {date:t0};
+  if(/\byesterday\b/.test(s))return {date:addDays(t0,-1)};
+  if(/\btomorrow\b/.test(s))return {date:addDays(t0,1)};
+  if(m=/\b(?:in|after)\s+(\d{1,2})\s+months?\b/.exec(s)){const d=new Date();d.setMonth(d.getMonth()+(+m[1]));return {date:ds(d),approx:true}}
+  const yr=/\b(20\d\d)\b/.exec(s);
+  const pick=(mo,day)=>{if(yr)return hkIso(+yr[1],mo,day);const c=[Y-1,Y,Y+1].map(y=>hkIso(y,mo,day)).filter(Boolean);return mode==='past'?c.filter(x=>x<=t0).pop():c.find(x=>x>=t0)};
+  if(m=new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:of\\s+)?('+HK_MN+')\\b').exec(s)){const r=pick(HK_MI(m[2]),+m[1]);return r?{date:r}:null}
+  if(m=new RegExp('\\b('+HK_MN+')\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b').exec(s)){const r=pick(HK_MI(m[1]),+m[2]);return r?{date:r}:null}
+  if(m=new RegExp('\\b('+HK_MN+')\\b').exec(s)){
+    const mo=HK_MI(m[1]);if(mode==='past'){const c=[Y-1,Y,Y+1].map(y=>hkIso(y,mo,1)).filter(x=>x&&x<=t0).pop();return c?{date:c,approx:true}:null}
+    const c=[Y,Y+1,Y+2].map(y=>hkIso(y,mo+1,0)||(new Date(y,mo+1,0).getFullYear()+'-'+n2(mo+1)+'-'+n2(new Date(y,mo+1,0).getDate()))).find(x=>x>=t0);return c?{date:c,approx:true}:null}
+  if(m=/\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b/.exec(s)){
+    const day=+m[1],cands=[[Y,M-2],[Y,M-1],[Y,M]].map(([y,mo])=>{const dt=new Date(y,mo,1);return hkIso(dt.getFullYear(),dt.getMonth(),day)}).filter(Boolean);
+    const r=mode==='past'?cands.filter(x=>x<=t0).pop():cands.find(x=>x>=t0);return r?{date:r}:null}
+  return null;
+}
+function hkSpan(a,b){
+  if(!a||!b)return '';const d=between(a,b);if(d<0)return '';
+  if(d<45)return `${d+1} day${d?'s':''}`;const mo=Math.round(d/30.4);return `about ${mo} month${mo===1?'':'s'}`;
+}
+function hkNew(title){return {id:'h'+uid(),title,place:'',link:'',milestones:MSDEF.map(([key,label,opt])=>({id:'m'+uid(),key,label,optional:opt,enabled:true,date:null,time:'',dateStatus:'verify',link:'',note:'',done:false,remind:'1d'}))}}
+function hkActive(h,day){
+  if(!h||!h.daily||!h.daily.time)return false;day=day||today();
+  if(h.start&&day<h.start)return false;if(h.end&&day>h.end)return false;
+  return hkOpen(h).length>0;
+}
+/* milestones still to do. "Event start" counts as done once the start date has passed */
+function hkOpen(h){const t0=today();return h.milestones.filter(m=>m.enabled&&!m.done&&!(m.key==='start'&&(m.date||h.start)&&(m.date||h.start)<=t0))}
+function hkNextLabel(h){const m=hkOpen(h).sort((a,b)=>(a.date||'9999')<(b.date||'9999')?-1:(a.date||'9999')>(b.date||'9999')?1:0)[0];return m?m.label:''}
+const HK_FUT=/\b(?:will|going to|gonna|plan(?:ning)? to|want to|wanna|need to|have to|has to|yet to|trying to|try to|looking for|searching for|tomorrow|tonight|next week|soon|should|shall|by tomorrow|later)\b/i;
+const HK_NEG=/\b(?:haven't|have not|hasn't|has not|not yet|not|didn't|did not|untick|uncheck|unmark|undo)\b/i;
+const HK_PAT={
+  registration:[/\bregistered\b/,/\bregistration\b[^.]{0,20}\b(?:done|complete|completed|finished|over|successful)\b/,/\b(?:completed|finished|done|did)\b[^.]{0,12}\bregistration\b/,/\bregistration (?:ho gaya|kar liya|complete ho gaya)\b|\bregister kar (?:liya|diya)\b/],
+  team:[/\b(?:created|formed|made|built|completed|finished|finalized|finalised|got|found|have|had)\s+(?:a |the |my |our )?(?:hackathon )?team(?:\s+(?:to participate|for (?:the )?\w+(?: \w+)?|ready|now))?\s*(?:$|and\b)/,/\bteam\s+(?:is\s+|has been\s+)?(?:ready|done|complete|completed|formed|created|finali[sz]ed)\b/,/\bteam formation\b[^.]{0,15}\b(?:done|complete|completed)\b/,/\bteam (?:ban gayi|ban gaya|ready hai|ho gayi)\b/],
+  submission:[/\bsubmitted\b/,/\bsubmission\b[^.]{0,20}\b(?:done|complete|completed|finished)\b/,/\b(?:completed|finished|done|did)\b[^.]{0,12}\bsubmission\b/,/\bsubmit kar (?:diya|liya)\b|\bsubmission ho gaya\b/]
+};
+const HK_WORD={registration:/\bregistration\b/,team:/\bteam(?: formation)?\b/,submission:/\bsubmission\b/};
+function hkParse(t,raw){
+  const low=String(t).toLowerCase();
+  const hasHack=/\bhackathons?\b/.test(low);
+  const clauses=low.split(/[;.]|\s+(?:and|but)\s+|\s+then\s+/).map(x=>x.trim()).filter(Boolean);
+  /* milestone ticks and unticks */
+  const ticks=[],notes=[];
+  for(const cl of clauses){
+    if(/\b(?:course|class|exam|club|community|workshop|webinar|vote|lecture)\b/.test(cl)&&!hasHack)continue;
+    for(const k of ['registration','team','submission']){
+      const aff=HK_PAT[k].some(r=>r.test(cl)),word=HK_WORD[k].test(cl);
+      if(!aff&&HK_FUT.test(cl)&&(hasHack||cl.split(' ').length<=6)&&({registration:/\bregister\b|\bregistration\b/,team:/\b(?:find|form|get|make|build)\b[^.]{0,10}\bteam\b|\bteam\b/,submission:/\bsubmit\b|\bsubmission\b/}[k]).test(cl)&&S.hacks.length&&!/\b(?:course|class|exam|club|lecture|meeting|project|assignment)\b/.test(cl)){notes.push(`${HK_LBL[k]} sounds like it is not done yet, so I did not tick it.`);continue}
+      if(!word&&!aff)continue;
+      if(!hasHack&&!word&&cl.split(' ').length>3)continue;
+      const unt=/\b(?:untick|uncheck|unmark)\b/.test(cl)||(/\b(?:mark|set)\b/.test(cl)&&/\bnot (?:done|complete|completed)\b/.test(cl));
+      if(unt){ticks.push({key:k,done:false});continue}
+      if(!aff)continue;
+      if(HK_NEG.test(cl)&&!/\bnot\s+(?:only|just)\b/.test(cl)){ticks.push({key:k,done:false});continue}
+      if(HK_FUT.test(cl)){notes.push(`${HK_LBL[k]} sounds like it is not done yet, so I did not tick it.`);continue}
+      ticks.push({key:k,done:true});
+    }
+  }
+  /* dates */
+  const segOf=(re)=>{const m=re.exec(low);if(!m)return null;return low.slice(m.index+m[0].length).split(/\b(?:and|but|then|remind|so)\b|[,;.]/)[0].trim()};
+  const startRe=/\b(?:started|has started|began|begun|starts|begins|starting|beginning|start date)\b\s*(?:on|from|at|is)?/;
+  const endRe=/\b(?:ends|end|ending|finishes|finished|last date|end date)\b\s*(?:on|by|in|at|is|around)?/;
+  let start=null,end=null,startApprox=false,endApprox=false,bad=null;
+  {const m=startRe.exec(low);if(m){const seg=segOf(startRe),past=/started|began|begun/.test(m[0]);const r=seg&&hkDate(seg,past?'past':'future');if(r){start=r.date;startApprox=!!r.approx}else bad='start'}}
+  {const m=endRe.exec(low);if(m&&(hasHack||start||/\bends?\b|\bending\b/.test(m[0]))){const seg=segOf(endRe);const r=seg&&hkDate(seg,'future');if(r){end=r.date;endApprox=!!r.approx}else if(seg!==null&&seg!=='')bad=bad||'end'}}
+  /* daily reminder */
+  let daily=null,needTime=false;
+  if(/\b(?:every ?day|daily|each day)\b/.test(low)&&(hasHack||start||end||ticks.length||(S.hacks.length&&!/\bto\s+\w+|\bfor\b/.test(low)&&low.split(' ').length<=7))){
+    const cl=clauses.find(c=>/\b(?:every ?day|daily|each day)\b/.test(c))||low,tm=vTime(cl);
+    if(tm.time){if(/\b(?:at|by)\s+\d{1,2}\b(?!:)/.test(cl)&&!/\b(?:am|pm|a\.m|p\.m|noon|midnight)\b/.test(cl))return {kind:'clarify',why:'hkampm',q:raw};daily={time:tm.time}}
+    else needTime=true;
+  }
+  const doing=start||end||ticks.length||daily||needTime||bad;
+  if(!doing){if(notes.length&&(hasHack||S.hacks.length))return {kind:'say',say:notes[0]+' You can set its date in Hackathons.'};return null}
+  if(!hasHack&&!ticks.length&&!start&&!end&&!daily&&!needTime)return null;
+  /* a bare milestone phrase with no hackathon word is only about hackathons if it is short */
+  if(!hasHack&&low.split(' ').length>9)return null;
+  if(!hasHack&&!S.hacks.length)return null;
+  if(bad)return {kind:'clarify',why:'hkdate',q:raw};
+  if(start&&end&&end<start)return {kind:'clarify',why:'hkorder',q:raw};
+  if(needTime)return {kind:'clarify',why:'hktime',q:raw};
+  /* which hackathon */
+  let name='';
+  {const m=/((?:[a-z0-9&'.-]+\s+){1,4}hackathon)\b|\bhackathon\s+(?:called|named|for)\s+([a-z0-9&'. -]{2,40})/i.exec(String(raw));
+   if(m){name=(m[1]||m[2]||'').trim().replace(/^(?:a|an|the|my|our|this|that|new|one|have|had|got|have a|i have a|i have)\s+/ig,'').replace(/^(?:a|an|the|my|our|this|that)\s+/i,'').trim();if(!name.replace(/\bhackathons?\b/i,'').trim())name=''}}
+  let h=null,title='';
+  if(name&&!/^(?:i|we|it|that|which|and|have|has|had)$/i.test(name.split(' ')[0])){
+    const r=vMatch(name,S.hacks,x=>x.title);if(r.one)h=r.one;else if(r.many)return {kind:'say',say:`Which hackathon? ${r.many.map(x=>x.title).join(', or ')}.`};
+    else title=name.split(' ').map(w=>w?w[0].toUpperCase()+w.slice(1):w).join(' ');
+  }else{
+    if(S.hacks.length===1)h=S.hacks[0];
+    else if(S.hacks.length>1)return {kind:'say',say:`Which hackathon? ${S.hacks.slice(0,4).map(x=>x.title).join(', or ')}. Say its name with what you want to change.`};
+    else return {kind:'clarify',why:'hkname',q:raw};
+  }
+  if(!h&&ticks.length&&!start&&!end&&!daily)return {kind:'say',say:`I could not find a hackathon called ${title}. Add it first, for example: ${title} started on the 23rd.`};
+  return {kind:'hackup',hid:h?h.id:null,title:h?h.title:title,create:!h,start,startApprox,end,endApprox,ticks,daily,notes};
+}
+const hkFd=d=>fd(d)+(d.slice(0,4)!==today().slice(0,4)?' '+d.slice(0,4):'');
+function hkSumm(c){
+  const p=[];const nm=c.title;
+  p.push(`${c.create?'Create hackathon':'Update'} ${nm}`);
+  if(c.start)p.push(`started ${hkFd(c.start)}${c.startApprox?' (not exact)':''}`);
+  if(c.end)p.push(`ends ${hkFd(c.end)}${c.endApprox?' (end of the month you said, not exact)':''}`);
+  const h=c.hid&&S.hacks.find(x=>x.id===c.hid),a=c.start||(h&&h.start),b=c.end||(h&&h.end),sp=hkSpan(a,b);if(sp&&(c.start||c.end))p.push(sp);
+  for(const k of c.ticks)p.push(`${HK_LBL[k.key]} ${k.done?'done':'not done'}`);
+  if(c.daily)p.push(`daily reminder at ${vT12(c.daily.time)}`);
+  return p.join(', ');
+}
+function hkCommit(c){
+  let h=c.hid&&S.hacks.find(x=>x.id===c.hid);const created=!h;
+  const snap=h?JSON.stringify(h):null;
+  if(created){h=hkNew(c.title);S.hacks.push(h)}
+  const say=[],now=today();
+  if(c.start){h.start=c.start;h.startApprox=!!c.startApprox;const m=h.milestones.find(x=>x.key==='start');if(m&&!m.date){m.date=c.start;m.dateStatus=c.startApprox?'verify':'confirmed';m.note='Told to Aura by you';m.verifiedOn=c.startApprox?undefined:now}}
+  if(c.end){h.end=c.end;h.endApprox=!!c.endApprox}
+  for(const k of c.ticks){const m=h.milestones.find(x=>x.key===k.key&&x.enabled)||h.milestones.find(x=>x.key===k.key);if(!m)continue;m.enabled=true;
+    if(!!m.done===k.done)say.push(`${m.label} was already ${k.done?'done':'not ticked'}.`);else{m.done=k.done;say.push(`${m.label} ${k.done?'ticked':'unticked'}.`)}}
+  if(c.daily)h.daily={time:c.daily.time};
+  save();render();setTimeout(autoTick,400);
+  /* the message is built from what is now stored, so it always matches */
+  const st=S.hacks.find(x=>x.id===h.id);if(!st)return vBanner('I could not save that. Nothing was changed.');
+  const out=[`${created?'Created':'Updated'}: ${st.title}.`];
+  if(c.start)out.push(`Started ${hkFd(st.start)}${st.startApprox?' (not exact)':''}.`);
+  if(c.end)out.push(`Ends ${hkFd(st.end)}${st.endApprox?' (end of that month, not exact)':''}.`);
+  const sp=hkSpan(st.start,st.end);if(sp&&(c.start||c.end))out.push(`That is ${sp}.`);
+  out.push(...say);
+  if(c.daily&&st.daily)out.push(`Daily reminder at ${vT12(st.daily.time)}.`);
+  return vSay(out.join(' '),()=>{if(created)S.hacks=S.hacks.filter(x=>x.id!==h.id);else{const i=S.hacks.findIndex(x=>x.id===h.id);if(i>=0)S.hacks[i]=JSON.parse(snap)}save();render();vBanner('Undone')});
+}
 /* ---- feedback ---- */
 let vBannerT,VU=null;
 function vBanner(text,undo,live){
@@ -2965,6 +3135,7 @@ let VLAST='',VCF=null;
 function vSumm(c){
   if(c.kind==='task')return `Add task: ${c.title}, due ${vDateSay(c.date)}${c.time?' at '+vT12(c.time):''}`;
   if(c.kind==='event'){const cl=overlapsOf(c.date,c.start,c.end);return `Add ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}${c.auto?' (a free slot I picked for you)':''}${c.fromNow?' (starting now, since you only said when it ends)':''}${cl.length?'. Heads up: it overlaps '+cl[0]:''}`}
+  if(c.kind==='hackup')return hkSumm(c);
   if(c.kind==='hack'){const L={registration:'registration',team:'team formation',submission:'submission',start:'event start'}[c.milestone]||'event start';return `Add to Hackathons: ${c.title}${c.date?`, ${L} on ${vDateSay(c.date)}${c.time?' at '+vT12(c.time):''}`:' (add the dates later)'}`}
   if(c.kind==='comm')return `Add to Communities: ${c.name} (want to join)`;
   if(c.kind==='comev')return `Add to Communities & Events: ${c.title}, ${vDateSay(c.date)}${c.time?' at '+vT12(c.time):''}`;
@@ -2988,6 +3159,7 @@ function vCommit(c){
      const e={id:'e'+uid(),title:c.title,type:c.type,date:c.date,start:c.start,end:c.end,by:'user'};S.events.push(e);save();render();setTimeout(autoTick,400);
      return vSay(`Added ${c.title}, ${vDateSay(c.date)} from ${vT12(c.start)} to ${vT12(c.end)}.${(()=>{const cl=overlapsOf(c.date,c.start,c.end).filter(x=>!String(x).includes(c.title));return cl.length?' Heads up: it overlaps '+cl[0]+'.':''})()}`,()=>{S.events=S.events.filter(x=>x.id!==e.id);save();render();vBanner('Removed')});
    }
+   case 'hackup':return hkCommit(c);
    case 'hack':{
      const key=['registration','team','submission','start'].includes(c.milestone)?c.milestone:'start';
      const low=x=>String(x).toLowerCase().trim();
@@ -3019,7 +3191,7 @@ function vExec(c){
    case 'say':return vSay(c.say);
    case 'help':return vSay('Try: open tasks. Add task physics lab tomorrow at 5 pm. Schedule class maths tomorrow from 9 to 10 am. Mark physics lab done. What is on today. Add course AI Skill Passport.');
    case 'nav':{go(c.view);const l=(NAV.find(n=>n[0]===c.view)||[])[1]||c.view;return vBanner('Opened '+l)}
-   case 'task':case 'event':case 'course':case 'hack':case 'comm':case 'comev':{const cap=x=>x?x[0].toUpperCase()+x.slice(1):x;if(c.title)c.title=cap(c.title);if(c.name)c.name=cap(c.name);return vConfirm(c,VLAST)}
+   case 'task':case 'event':case 'course':case 'hack':case 'hackup':case 'comm':case 'comev':{const cap=x=>x?x[0].toUpperCase()+x.slice(1):x;if(c.title)c.title=cap(c.title);if(c.name)c.name=cap(c.name);return vConfirm(c,VLAST)}
    case 'lesson':{
      const L=CRS().filter(x=>!crsDone(x));if(!L.length)return vSay('You have no active courses yet.');
      const r=c.q?vMatch(c.q,L,x=>x.name):(L.length===1?{one:L[0]}:{many:L.slice(0,3)});
@@ -3033,7 +3205,8 @@ function vExec(c){
    }
    case 'summary':return vSay(vDaySummary(c.date));
    case 'next':{const t0=today(),n=nowM(),e=occ(t0).filter(x=>x.type!=='rest'&&mins(x.start)>n).sort((a,b)=>mins(a.start)-mins(b.start))[0];return vSay(e?`Next is ${e.title} at ${vT12(e.start)}.`:'Nothing else on your calendar today.')}
-   case 'clarify':{vBanner(c.why==='ampm'?'Is that reminder in the morning or the evening? Say it again with am or pm, for example: remind me at 9 pm today.':'That reminder time has already passed today. Say a later time or another day, for example: remind me at 9 am tomorrow.');vcapPrefill(c.q);return}
+   case 'clarify':{if(/^hk/.test(c.why)){vBanner({hkampm:'Is the daily reminder in the morning or the evening? Say it again with am or pm, for example: remind me every day at 8 pm.',hktime:'What time each day should I remind you? Add it to what you said, for example: remind me every day at 8 pm.',hkdate:'I could not read that date. Say it again, for example: started on 23 November and ends on 31 March.',hkorder:'The end date is before the start date. Say it again with the right dates.',hkname:'What is the hackathon called? Add its name, for example: Smart India Hackathon started on the 23rd.'}[c.why]||'Please say that again.');vcapPrefill(c.q);return}
+   vBanner(c.why==='ampm'?'Is that reminder in the morning or the evening? Say it again with am or pm, for example: remind me at 9 pm today.':'That reminder time has already passed today. Say a later time or another day, for example: remind me at 9 am tomorrow.');vcapPrefill(c.q);return}
    case 'ask':{if(document.getElementById('vcap')){vcapPrefill(c.q);vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task. Tap the big button and try again, for example: Presentation tomorrow, remind me at 9 pm today. Or type it below.`);return}
    vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task or event${VNW?' ('+VNW+')':''}, so I am asking Aura instead.`);try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
   }
@@ -3115,7 +3288,7 @@ function vNluMap(m){
 async function vRun(raw,alts){
   const first=String(raw||'').trim();
   /* a task with its own reminder time is handled by the rules parser, which keeps due date and reminder moment separate */
-  try{const c0=first&&vParse(first);if(c0&&((c0.kind==='task'&&c0.remTime)||c0.kind==='clarify'))return vRunRules(raw,alts)}catch(e){}
+  try{const c0=first&&vParse(first);if(c0&&((c0.kind==='task'&&c0.remTime)||c0.kind==='clarify'||c0.kind==='hackup'))return vRunRules(raw,alts)}catch(e){}
   if(first&&VONLU&&!/REPLACE_WITH/.test(PUSH_SERVER)){
     vBanner('Understanding...','',true);
     const c=vNluMap(await vNlu(first));
@@ -3545,6 +3718,8 @@ const _vRun0=vRun;
 vRun=async function(raw,alts){
   const first=String(raw||'').trim();
   if(VPEND){if(Date.now()-VPEND.at<60000&&vResolvePend(first))return;VPEND=null}
+  /* hackathon sentences carry several parts (dates, ticks, daily reminder) and must not be split or treated as a task edit */
+  try{const hk=hkParse(vNorm(first),first);if(hk&&(hk.kind==='hackup'||hk.kind==='say'||(hk.kind==='clarify'&&/^hk/.test(hk.why))))return _vRun0(raw,alts)}catch(x){}
   const e=vEditParse(first);
   if(e&&vEdit(e))return;
   const parts=vSplit(first);
