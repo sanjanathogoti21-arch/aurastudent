@@ -27,3 +27,11 @@ I built this with AI assistance (Claude). I decided what it should do, tested it
 ## Known limits
 - Alerts with the screen off need the optional server and depend on the phone's battery settings
 - Not on app stores
+
+## Voice languages, Wispr and task memory
+
+- **Language**: Profile > Voice commands > Voice language (Auto-detect, English, Hindi, Telugu, Tamil, Kannada, Malayalam, Marathi, Bengali, Gujarati, Punjabi, Urdu). Saved on the device and reused next time. Auto-detect only works with the cloud voice service; the browser's built-in recognizer cannot detect a language.
+- **Wispr Flow**: used only for speech-to-text and the detected language, through the official Voice Interface API, called from the Worker (`push-server/worker.js`, `/stt`). The key is never in the app. Setup: get an approved API key from Wispr (platform.wisprflow.ai), add it as the Worker secret `WISPR_API_KEY`, deploy `worker.js`. Without the key the Worker uses Whisper, and without either the app falls back to the browser recognizer and typing. Not verified against the live Wispr service (no key was available).
+- **Replies**: the planner's replies are English. The language is passed to the AI prompt when the AI path is used; spoken replies pick a matching device voice when the text is in another script, and say so when the device has none.
+- **Task memory**: the task being followed is kept on the device for 20 minutes, separate from the profile and language. Review, change or clear it under Profile > Task memory. No audio is stored.
+- **Credits**: https://github.com/gauravambare/Gaurav-jarvis (Apache-2.0 fork; releases up to 1.6.0 MIT) was reviewed as a reference. It is a Python desktop app, so no code was copied.

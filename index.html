@@ -1222,12 +1222,12 @@ Rules:
 - To suggest tradeoffs, name them plainly (for example "moving this frees Thursday evening but delays the lab record by a day").
 Reply with ONLY one JSON object: {"reply": string (under 170 words; simple markdown with **bold** and "- " bullets), "basis": [short strings naming the data you used], "assumptions": [short strings for estimates you made], "proposals": []}`;
 
-async function askAI(q){
+async function askAI(q,lang){
   const sm=await getSample();let out;
   if(sm){
     const hist=S.chat.slice(-6).map(m=>(m.role==='user'?'Student: ':'Aura: ')+m.text).join('\n');
     try{
-      out=await sm.json(RULES+'\n\nDATA:\n'+JSON.stringify(aiContext())+'\n\nRECENT CHAT:\n'+hist+'\n\nSTUDENT QUESTION: '+q,{cache:false});
+      out=await sm.json(RULES+'\n\nDATA:\n'+JSON.stringify(aiContext())+'\n\nRECENT CHAT:\n'+hist+'\n\nSTUDENT QUESTION: '+q+(lang&&lang!=='en'&&VL_NAME[lang]?'\n\nSTUDENT LANGUAGE: '+VL_NAME[lang]+' ('+lang+'). Reply in this language in simple words and keep dates as numerals.':''),{cache:false});
       if(!out||typeof out!=='object'||typeof out.reply!=='string')throw {code:'invalid_json'};
       out.source='claude';
     }catch(e){
@@ -1402,7 +1402,7 @@ VIEWS.assistant=()=>{
 };
 async function sendQ(q,orb){
   S.chat.push({id:uid(),role:'user',text:q});UI.aiBusy=true;if(!orb&&UI.view!=='assistant')UI.view='assistant';render();if(orb)orbRender();
-  let out;try{out=await askAI(q)}catch(e){out={reply:'Something went wrong on my side. Please try again.',proposals:[],source:'local'}}
+  let out;try{out=await askAI(q,vLangForAI(q))}catch(e){out={reply:'Something went wrong on my side. Please try again.',proposals:[],source:'local'}}
   S.chat.push({id:uid(),role:'ai',text:String(out.reply||'I do not have an answer for that.'),props:out.proposals||[],basis:strs(out.basis),assumptions:strs(out.assumptions),source:out.source||'local',note:out.note});
   S.chat=S.chat.slice(-40);UI.aiBusy=false;save();if(UI.view==='assistant')render();if(UI.orbOpen)orbRender();speak(String(out.reply||''));
 }
@@ -1619,7 +1619,7 @@ function orbHTML(){
    <div class="setrow" style="padding:6px 0"><span class="sm">Read answers aloud</span><button class="switch" role="switch" aria-checked="${S.auto.speak}" aria-label="Read answers aloud" data-act="speakToggle"></button></div>`;
 }
 function orbRender(){const m=$('#modal .modal');if(!UI.orbOpen||!m)return;m.innerHTML=orbHTML();const l=$('#orblog');if(l)l.scrollTop=l.scrollHeight;const i=$('#orb-q');if(i&&!UI.aiBusy)i.focus()}
-function speak(text){if(!S.auto.speak||!window.speechSynthesis||!text)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text.replace(/\*\*/g,'').replace(/\n+/g,'. ').slice(0,500));u.lang='en-IN';speechSynthesis.speak(u)}catch(e){}}
+function speak(text){if(!S.auto.speak||!window.speechSynthesis||!text)return;try{speechSynthesis.cancel();speechSynthesis.speak(vUtter(text.replace(/\*\*/g,'').replace(/\n+/g,'. '),500))}catch(e){}}
 Object.assign(A,{
   orb:()=>{UI.orbOpen=true;modal(orbHTML(),false);const l=$('#orblog');if(l)l.scrollTop=l.scrollHeight},
   orbChip:el=>{if(!UI.aiBusy)sendQ(el.dataset.q,true)},
@@ -3122,7 +3122,7 @@ function vBanner(text,undo,live){
   b.innerHTML=`<span class="vdot ${live?'live':''}"></span><span class="vtx">${esc(text)}</span>${live&&VOREC?'<span class="vlvl"><i></i></span>':''}${undo?'<button class="vbt" data-act="voiceUndo">Undo</button>':''}<button class="vbt" data-act="voiceClose" aria-label="Close">${'×'}</button>`;
   b.classList.add('on');if(!live)vBannerT=setTimeout(()=>b.classList.remove('on'),undo?8000:Math.max(6000,String(text).length*75));
 }
-function vSay(text,undo){vBanner(text,undo);if(VC().speak&&window.speechSynthesis&&!window.__ahQuiet){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text.slice(0,400));u.lang='en-IN';speechSynthesis.speak(u)}catch(e){}}}
+function vSay(text,undo){vBanner(text,undo);if(VC().speak&&window.speechSynthesis&&!window.__ahQuiet){try{speechSynthesis.cancel();speechSynthesis.speak(vUtter(text,400))}catch(e){}}}
 function vDaySummary(date){
   const ev=occ(date).filter(e=>e.type!=='rest').sort((a,b)=>mins(a.start)-mins(b.start));
   const tk=S.tasks.filter(t=>!t.done&&t.due&&(t.due===date||(date===today()&&t.due<date)));
@@ -3205,8 +3205,8 @@ function vExec(c){
    }
    case 'summary':return vSay(vDaySummary(c.date));
    case 'next':{const t0=today(),n=nowM(),e=occ(t0).filter(x=>x.type!=='rest'&&mins(x.start)>n).sort((a,b)=>mins(a.start)-mins(b.start))[0];return vSay(e?`Next is ${e.title} at ${vT12(e.start)}.`:'Nothing else on your calendar today.')}
-   case 'clarify':{if(/^hk/.test(c.why)){vBanner({hkampm:'Is the daily reminder in the morning or the evening? Say it again with am or pm, for example: remind me every day at 8 pm.',hktime:'What time each day should I remind you? Add it to what you said, for example: remind me every day at 8 pm.',hkdate:'I could not read that date. Say it again, for example: started on 23 November and ends on 31 March.',hkorder:'The end date is before the start date. Say it again with the right dates.',hkname:'What is the hackathon called? Add its name, for example: Smart India Hackathon started on the 23rd.'}[c.why]||'Please say that again.');vcapPrefill(c.q);return}
-   vBanner(c.why==='ampm'?'Is that reminder in the morning or the evening? Say it again with am or pm, for example: remind me at 9 pm today.':'That reminder time has already passed today. Say a later time or another day, for example: remind me at 9 am tomorrow.');vcapPrefill(c.q);return}
+   case 'clarify':{const Q={ampm:'Is that reminder in the morning or the evening?',past:'That reminder time has already passed today. What time or day should I use instead?',hkampm:'Is the daily reminder in the morning or the evening?',hktime:'What time each day should I remind you?',hkdate:'I could not read that date. What are the start and end dates? For example: started on 23 November, ends on 31 March.',hkorder:'The end date is before the start date. What are the correct dates?',hkname:'What is the hackathon called?'};
+   const qq=Q[c.why]||'Please say that again.';VASK={why:c.why,q:c.q,at:Date.now(),question:qq};vBanner(qq);vcapPrefill(c.q);return}
    case 'ask':{if(document.getElementById('vcap')){vcapPrefill(c.q);vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task. Tap the big button and try again, for example: Presentation tomorrow, remind me at 9 pm today. Or type it below.`);return}
    vBanner(`I heard: "${String(c.q).slice(0,120)}". I could not turn that into a task or event${VNW?' ('+VNW+')':''}, so I am asking Aura instead.`);try{if(UI.view==='assistant'&&typeof sendQ==='function')sendQ(c.q,false);else{A.orb();if(typeof sendQ==='function')sendQ(c.q,true)}}catch(e){vBanner('Could not reach the assistant.')}return}
   }
@@ -3406,7 +3406,9 @@ async function vCloudTap(){
     if(!r.ok)throw new Error((j.error||('The server answered '+r.status+'.'))+(j.detail?' ['+j.detail+']':''));
     const text=String(j.text||'').trim();
     if(!text||/^[\s.,!?-]*$/.test(text)){vBanner('I did not catch that. Tap the mic and try again.');vWakeResume();return true}
-    vBanner('"'+text+'"','',true);setTimeout(()=>{vRun(text)},350);
+    const dl=String(j.language||'').toLowerCase();VVOICE_AT=Date.now();
+    if(VC().lang==='auto'&&dl){if(VL_NAME[dl]&&dl!=='auto')VSEEN={code:dl,at:Date.now()};else toast(`I heard a language I cannot handle yet (${dl}). I will treat it as English.`)}
+    vBanner((VC().lang==='auto'&&VL_NAME[dl]&&dl!=='en'?'Heard '+VL_NAME[dl]+': ':'')+'"'+text+'"','',true);setTimeout(()=>{vRun(text)},350);
   }catch(e){
     if(SR){VOWHY=(e&&e.message)||'the speech service failed.';vWakeResume();return false}
     vBanner(/fetch|network|Load failed/i.test(e.message||'')?'Could not reach the AuraStudent server. Check your connection.':(e.message||'Voice failed. Try again.'));
@@ -3440,7 +3442,7 @@ async function voiceTap(again){
     r.onerror=e=>{err=e.error||'error'};
     r.onend=()=>{VOREC=null;const f=$('#vfab');if(f)f.classList.remove('on');
       if(!fin.trim()&&lastI.trim()&&(!err||err==='no-speech'||err==='aborted')){fin=lastI;alts=[]}
-      if(fin.trim()){const cl=t=>t.replace(/^\s*(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b[\s,.:]*/i,'');vRun(fin.trim(),alts.map(cl).filter(Boolean))}
+      if(fin.trim()){VVOICE_AT=Date.now();const cl=t=>t.replace(/^\s*(?:hey|hi|ok|okay|hello)\s+(?:aura|ora|aurora)\b[\s,.:]*/i,'');vRun(fin.trim(),alts.map(cl).filter(Boolean))}
       else if(err==='not-allowed'||err==='service-not-allowed')vBanner('The microphone is blocked. Allow it for this site in your browser settings.');
       else if(err==='network')vBanner('Voice needs an internet connection.');
       else if(err==='audio-capture')vBanner('No microphone found, or another app is using it. Close it and try again.');
@@ -3454,6 +3456,123 @@ async function voiceTap(again){
     r.start();
   }catch(e){VOREC=null;toast('Voice input is not available here.');vWakeResume()}
 }
+/* ---- Language, voice status, replies in the right voice, follow-up questions and task memory ---- */
+const VL_NAME={auto:'Auto-detect',en:'English',hi:'Hindi',te:'Telugu',ta:'Tamil',kn:'Kannada',ml:'Malayalam',mr:'Marathi',bn:'Bengali',gu:'Gujarati',pa:'Punjabi',ur:'Urdu'};
+const VL_BCP={en:'en-IN',hi:'hi-IN',te:'te-IN',ta:'ta-IN',kn:'kn-IN',ml:'ml-IN',mr:'mr-IN',bn:'bn-IN',gu:'gu-IN',pa:'pa-IN',ur:'ur-IN'};
+let VSEEN=null,VVOICE_AT=0,VASK=null;
+/* the language to use now: the profile choice, or (in Auto-detect) the language last heard by the cloud voice service */
+const vLang=()=>{const c=VC().lang;if(c&&c!=='auto')return c;return VSEEN&&Date.now()-VSEEN.at<1800000?VSEEN.code:'en'};
+function vReplyLang(t){
+  t=String(t||'');
+  if(/[ऀ-ॿ]/.test(t))return VC().lang==='mr'?'mr':'hi';
+  if(/[ఀ-౿]/.test(t))return 'te';if(/[஀-௿]/.test(t))return 'ta';if(/[ಀ-೿]/.test(t))return 'kn';
+  if(/[ഀ-ൿ]/.test(t))return 'ml';if(/[ঀ-৿]/.test(t))return 'bn';if(/[઀-૿]/.test(t))return 'gu';
+  if(/[਀-੿]/.test(t))return 'pa';if(/[؀-ۿ]/.test(t))return 'ur';
+  return 'en';
+}
+function vVoiceFor(code){
+  try{const vs=speechSynthesis.getVoices()||[],b=VL_BCP[code]||code;
+    return vs.find(v=>String(v.lang).replace('_','-')===b)||vs.find(v=>String(v.lang).toLowerCase().startsWith(code))||null}catch(e){return null}
+}
+const VWARN={};
+/* builds the spoken utterance. English keeps the voice the app always used. Other scripts use a matching voice if the device has one. */
+function vUtter(text,max){
+  const clean=String(text||'').slice(0,max||400),code=vReplyLang(clean),u=new SpeechSynthesisUtterance(clean);
+  if(code==='en')u.lang='en-IN';
+  else{const v=vVoiceFor(code);if(v){u.voice=v;u.lang=v.lang}else{u.lang=VL_BCP[code]||'en-IN';
+    if(!VWARN[code]){VWARN[code]=1;toast(`This device has no ${VL_NAME[code]} voice installed, so I cannot read that aloud properly. The text is on screen.`)}}}
+  u.onstart=()=>vSpeakState(true);u.onend=u.onerror=()=>vSpeakState(false);
+  return u;
+}
+function vSpeakState(on){
+  let e=document.getElementById('vstate');
+  if(!on){if(e)e.classList.remove('on');return}
+  if(!e){e=document.createElement('button');e.id='vstate';e.type='button';e.setAttribute('aria-live','polite');
+    e.addEventListener('click',()=>{try{speechSynthesis.cancel()}catch(x){}vSpeakState(false)});document.body.appendChild(e)}
+  e.textContent='Speaking... tap to stop';e.classList.add('on');
+}
+/* get the chosen language ready before the user speaks, and say plainly what will happen */
+let VPREP={state:'idle',msg:''};
+function vPrepRender(){const e=document.getElementById('vprep');if(e){e.textContent=VPREP.msg;e.dataset.state=VPREP.state}}
+function vPrepare(){
+  const code=VC().lang,name=VL_NAME[code]||'English';
+  VPREP={state:'loading',msg:`Getting ${name} ready...`};vPrepRender();
+  const fin=()=>{
+    const cloud=typeof vCanCloud==='function'&&vCanCloud(),b=[];
+    if(code==='auto')b.push(cloud?'I will work out which language you speak using the cloud voice service.':'Auto-detect needs the cloud voice service, which is not available right now, so I will assume English. Pick a language to change that.');
+    else b.push(SR||cloud?`I will listen for ${name}.`:'Voice input is not available in this browser, but typing works.');
+    if(code!=='en')b.push('My replies are in English for now.');
+    if(VOWHY&&!cloud)b.push('Cloud voice problem: '+VOWHY);
+    VPREP={state:'ready',msg:'Ready. '+b.join(' ')};vPrepRender();
+  };
+  try{
+    if(window.speechSynthesis&&!(speechSynthesis.getVoices()||[]).length){let d=false;const go=()=>{if(d)return;d=true;fin()};
+      speechSynthesis.addEventListener('voiceschanged',go,{once:true});setTimeout(go,1500)}
+    else fin();
+  }catch(e){fin()}
+}
+function vLangForAI(q){const s=vReplyLang(q);if(s!=='en')return s;return Date.now()-VVOICE_AT<20000?vLang():'en'}
+/* one follow-up question at a time: the next thing the user says answers the question we just asked */
+function vAskMerge(p,t){
+  const low=vNorm(t).toLowerCase().replace(/[.!?]+$/,'').trim();
+  if(/^(?:cancel|never ?mind|forget it|stop|no thanks?)$/.test(low))return 'cancel';
+  if(/^(?:add|create|new|schedule|remind|open|go to|show|what|mark|move|delete)\b/.test(low)&&p.why!=='hkname')return false;
+  if(p.q&&low.includes(vNorm(p.q).toLowerCase().slice(0,12)))return false;   // they said the whole thing again
+  if(p.why==='ampm'||p.why==='hkampm'){
+    const ap=/\b(?:am|a m|morning)\b/.test(low)?'am':/\b(?:pm|p m|evening|night|afternoon|tonight)\b/.test(low)?'pm':'';
+    if(!ap)return 'again';
+    const out=String(p.q).replace(/\b(at|by)\s+(\d{1,2})(?::(\d{2}))?(?!\s*(?:am|pm|a\.m|p\.m|:))/i,(m,w,h,mm)=>`${w} ${h}${mm?':'+mm:''} ${ap}`);
+    return out===String(p.q)?false:out;
+  }
+  if(p.why==='past'){if(!/\d|\b(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|evening)\b/.test(low))return 'again';
+    return (String(p.q).replace(/\b(?:at|by)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?/gi,' ').replace(/\b(today|tonight)\b/gi,' ')+' '+t).replace(/\s+/g,' ').trim()}
+  if(p.why==='hktime'){if(!/\d/.test(low))return 'again';return `${p.q} at ${low.replace(/^(?:at|around|by)\s+/,'')}`}
+  if(p.why==='hkname'){if(low.split(' ').length>4||/\d|\b(?:have|has|had|i|we|registered|register|started|start|ends?|remind|team|submitted|completed|ticked|done|finished|hackathon)\b/.test(low))return false;const n=String(t).replace(/\bhackathon\b/i,'').replace(/^(?:it(?:'s| is)|called|named)\s+/i,'').replace(/[.!?]+$/,'').trim();if(!n)return 'again';const nm=n.split(/\s+/).slice(0,4).join(' ');return String(p.q).replace(/\b(?:a |the |my |our )?hackathon\b/i,nm+' hackathon')}
+  if(p.why==='hkdate'||p.why==='hkorder'){if(/hackathon/.test(low))return false;if(!/\b(?:start|started|starts|began|end|ends|ending)\b/.test(low))return 'again';const head=String(p.q).split(/\b(?:started|starts?|began|ends?|ending)\b/i)[0];return (head+' '+t).replace(/\s+/g,' ').trim()}
+  return false;
+}
+/* ---- task memory: the task Aura is following right now. Kept on this device, separate from the profile and the language. ---- */
+function tmGet(){if(!S.taskMem||typeof S.taskMem!=='object')S.taskMem={current:null,recent:[]};if(!Array.isArray(S.taskMem.recent))S.taskMem.recent=[];return S.taskMem}
+function tmSet(c){const m=tmGet();if(!c){m.current=null;return null}m.current={id:c.id,at:c.at};m.recent=[{id:c.id,at:c.at},...m.recent.filter(x=>x.id!==c.id)].slice(0,5);try{save()}catch(e){}return c}
+function tmCard(){
+  const m=tmGet(),cur=vCtx(),open=UI.tmEdit&&cur;
+  const info=t=>`<b>${esc(t.title)}</b><div class="sm muted">${esc(TS.where(t))}${t.remTime&&t.remDate?' · reminder '+esc(vDateSay(t.remDate))+' at '+esc(vT12(t.remTime)):''}</div>`;
+  const recent=m.recent.map(r=>S.tasks.find(t=>t.id===r.id)).filter(t=>t&&(!cur||t.id!==cur.id));
+  const lang=VC().lang;
+  return `<section class="card" aria-labelledby="tm-h"><header><h2 id="tm-h">Task memory</h2></header>
+   <p class="sm muted">The task Aura is following, so "make it tomorrow" or "it's done" works without repeating yourself. It stays on this device, is separate from your profile, and fades after 20 minutes. Audio is never stored.</p>
+   ${cur?`<div class="setrow" style="padding:8px 0;align-items:flex-start"><div style="min-width:0">${info(cur)}</div><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-act="tmChange">Change</button><button class="btn sm ghost" data-act="tmForget">Forget</button></div></div>`
+     :'<p class="sm faint">Nothing right now. Add or change a task and it shows up here.</p>'}
+   ${open?`<form class="grid" data-form="tmEdit" style="gap:8px;margin:6px 0 10px">
+     <label class="f">Title<input class="in" name="title" value="${esc(cur.title)}" required></label>
+     <label class="f">Due date<input class="in" type="date" name="due" value="${esc(cur.due||'')}"></label>
+     <label class="f">Due time<input class="in" type="time" name="dueTime" value="${esc(cur.dueTime||'')}"></label>
+     <label class="f">Reminder date<input class="in" type="date" name="remDate" value="${esc(cur.remDate||'')}"></label>
+     <label class="f">Reminder time<input class="in" type="time" name="remTime" value="${esc(cur.remTime||'')}"></label>
+     <div class="row" style="gap:8px"><button class="btn pri sm">Save changes</button><button type="button" class="btn sm ghost" data-act="tmCancel">Cancel</button></div></form>`:''}
+   ${recent.length?`<div class="sm" style="font-weight:650;margin:10px 0 4px">Recent</div>${recent.map(t=>`<div class="dl"><span class="sm">${esc(t.title)}</span><span class="row" style="gap:6px"><button class="btn sm ghost" data-act="tmUse" data-arg="${esc(t.id)}">Follow this</button><button class="btn sm ghost" data-act="tmDrop" data-arg="${esc(t.id)}">Forget</button></span></div>`).join('')}`:''}
+   <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-act="tmClear">Clear all task memory</button></div>
+   <div class="sm" style="font-weight:650;margin:16px 0 4px">Language preference</div>
+   <div class="sm muted">${esc(VL_NAME[lang]||'English')} is saved in your profile and used to get voice ready before you speak. Change it under Voice commands.</div>
+   ${lang!=='auto'?'<button class="btn sm" style="margin-top:8px" data-act="langReset">Reset to Auto-detect</button>':''}</section>`;
+}
+{const _vpm=VIEWS.profile;VIEWS.profile=()=>_vpm()+tmCard()}
+Object.assign(A,{
+  tmChange:()=>{UI.tmEdit=true;render()},tmCancel:()=>{UI.tmEdit=false;render()},
+  tmForget:()=>{VCTX=null;tmSet(null);UI.tmEdit=false;save();render();toast('Forgotten')},
+  tmUse:el=>{const t=S.tasks.find(x=>x.id===el.dataset.arg);if(t){VCTX=tmSet({id:t.id,at:Date.now()});tmSet(VCTX);render()}},
+  tmDrop:el=>{const m=tmGet();m.recent=m.recent.filter(x=>x.id!==el.dataset.arg);if(m.current&&m.current.id===el.dataset.arg){m.current=null;VCTX=null}save();render()},
+  tmClear:()=>{S.taskMem={current:null,recent:[]};VCTX=null;VASK=null;VPEND=null;UI.tmEdit=false;save();render();toast('Task memory cleared')},
+  langReset:()=>{VC().lang='auto';VSEEN=null;save();render();vPrepare();toast('Language reset to Auto-detect')}
+});
+Object.assign(F,{tmEdit:d=>{
+  const t=vCtx();if(!t){UI.tmEdit=false;render();return}
+  const title=TS.cap(String(d.get('title')||'')),due=d.get('due')||'',dt=d.get('dueTime')||'',rd=d.get('remDate')||'',rt=d.get('remTime')||'';
+  if(!title){toast('The title cannot be empty');return}
+  if((rd&&!rt)||(rt&&!rd)){toast('Set both the reminder date and the reminder time, or leave both empty');return}
+  const snap=TS.patch(t,{title,due:due||null,dueTime:dt||null,remDate:rd||null,remTime:rt||null});
+  UI.tmEdit=false;if(snap===null)toast('Could not save: storage did not accept it');else{render();toast('Task memory updated')}
+}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)vWakeStop();else vWakeResume()});
 
 Object.assign(A,{
@@ -3468,7 +3587,8 @@ function voiceCard(){
   const v=VC();
   return `<section class="card" aria-labelledby="vc-h"><header><h2 id="vc-h">Voice commands</h2><span class="pill ok">Tap to talk</span></header>
    <p class="sm muted">Tap the mic button on any screen and speak. Say things like "open tasks", "add task physics lab tomorrow at 5 pm" or "what is on today". Anything it does not recognise goes to the Aura assistant.</p>
-   <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Language you speak</div><div class="sm muted">Auto works for most people. Pick one if it keeps mishearing you.</div></div><select class="in" style="width:auto" data-vlang="1" aria-label="Voice language">${[['auto','Auto detect'],['en','English'],['hi','Hindi'],['te','Telugu'],['ta','Tamil'],['kn','Kannada'],['ml','Malayalam'],['mr','Marathi'],['bn','Bengali'],['gu','Gujarati'],['pa','Punjabi'],['ur','Urdu']].map(([k,l])=>`<option value="${k}" ${v.lang===k?'selected':''}>${l}</option>`).join('')}</select></div>
+   <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Language you speak</div><div class="sm muted">Auto works for most people. Pick one if it keeps mishearing you.</div></div><select class="in" style="width:auto" data-vlang="1" aria-label="Voice language">${[['auto','Auto-detect'],['en','English'],['hi','Hindi'],['te','Telugu'],['ta','Tamil'],['kn','Kannada'],['ml','Malayalam'],['mr','Marathi'],['bn','Bengali'],['gu','Gujarati'],['pa','Punjabi'],['ur','Urdu']].map(([k,l])=>`<option value="${k}" ${v.lang===k?'selected':''}>${l}</option>`).join('')}</select></div>
+   <div class="sm" id="vprep" role="status" aria-live="polite" style="margin:0 0 8px">${esc(VPREP.msg||'')}</div>
    <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Speak replies aloud</div></div><button class="switch" role="switch" aria-checked="${v.speak}" aria-label="Speak replies aloud" data-act="voiceSpeak"></button></div>
    <div class="setrow" style="padding:8px 0"><div><div style="font-weight:650">Double-tap to speak</div><div class="sm muted">On the Today screen, double-tap an empty area to start the microphone.</div></div><button class="switch" role="switch" aria-checked="${v.dbl}" aria-label="Double-tap to speak" data-act="voiceDbl"></button></div>
    <details style="margin-top:8px"><summary class="sm" style="cursor:pointer;font-weight:650">What you can say</summary><div class="sm" style="line-height:1.6;margin-top:6px">
@@ -3493,6 +3613,7 @@ function voiceCard(){
 #vconfirm{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(440px,calc(100vw - 24px));background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 18px 50px -12px rgba(0,0,0,.6);z-index:80;display:flex;flex-direction:column;gap:10px}
 #vconfirm .vch{font-size:13px;color:var(--ink-2,var(--muted))}#vconfirm q{font-weight:650;color:var(--ink)}#vconfirm .vcs{font-size:17px;font-weight:700;line-height:1.35}#vconfirm .vcb{display:flex;gap:8px;flex-wrap:wrap}#vconfirm .vcn{font-size:12px;color:var(--faint,var(--muted))}
 #vbanner{position:fixed;left:50%;width:max-content;top:calc(12px + env(safe-area-inset-top,0px));transform:translate(-50%,-20px);background:var(--ink);color:var(--bg);padding:10px 12px 10px 16px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:all .25s;z-index:70;max-width:calc(100vw - 24px);display:flex;align-items:center;gap:10px}
+#vstate{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;display:none;border:0;border-radius:999px;padding:8px 16px;font:600 13px system-ui;background:var(--ink,#1b1b2f);color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer}#vstate.on{display:block}
 #vbanner.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #vbanner .vtx{min-width:0;overflow-wrap:anywhere}#vbanner .vdot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}#vbanner .vdot.live{animation:vp 1.2s ease-in-out infinite}
 #vbanner .vlvl{width:46px;height:6px;border-radius:3px;background:color-mix(in srgb,var(--bg) 25%,transparent);overflow:hidden;flex:none}#vbanner .vlvl i{display:block;height:100%;width:0;background:var(--accent);transition:width .08s}
@@ -3520,7 +3641,8 @@ let VREL=false;
  addEventListener('blur',release);
  document.addEventListener('visibilitychange',()=>{if(document.hidden)release()});
 }
-document.addEventListener('change',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.vlang){VC().lang=t.value;save();toast('Voice language saved')}});
+document.addEventListener('change',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.vlang){VC().lang=t.value;VSEEN=null;save();toast('Voice language saved');vPrepare()}});
+setTimeout(()=>{try{vPrepare()}catch(e){}},900);
 Object.assign(A,{
  voiceSave:()=>{const f=VCF;vConfirmClose();if(f)vCommit(f.c)},
  voiceCancel:()=>{vConfirmClose();vBanner('Cancelled. Nothing was saved.')},
@@ -3552,12 +3674,12 @@ const TS={
     if(o.remTime&&/^\d{2}:\d{2}$/.test(o.remTime)&&/^\d{4}-\d{2}-\d{2}$/.test(o.remDate||'')){t.remDate=o.remDate;t.remTime=o.remTime}
     S.tasks.push(t);
     if(!TS.saveNow()){S.tasks=S.tasks.filter(x=>x.id!==t.id);return {fail:'storage'}}
-    save();render();setTimeout(()=>{try{autoTick()}catch(e){}},400);VCTX={id:t.id,at:Date.now()};
+    save();render();setTimeout(()=>{try{autoTick()}catch(e){}},400);VCTX=tmSet({id:t.id,at:Date.now()});
     return {task:t};
   },
   patch(t,p){const snap=JSON.stringify(t);for(const k in p){if(p[k]===null||p[k]==='')delete t[k];else t[k]=p[k]}
     if(!TS.saveNow()){for(const k of Object.keys(t))delete t[k];Object.assign(t,JSON.parse(snap));return null}
-    save();render();VCTX={id:t.id,at:Date.now()};return snap},
+    save();render();VCTX=tmSet({id:t.id,at:Date.now()});return snap},
   restore(snap){const o=JSON.parse(snap),t=S.tasks.find(x=>x.id===o.id);if(!t)return;for(const k of Object.keys(t))delete t[k];Object.assign(t,o);save();render()},
   remove(t){const a=TS.arch();a.unshift({...t,delAt:Date.now()});a.length=Math.min(a.length,40);
     S.tasks=S.tasks.filter(x=>x.id!==t.id);
@@ -3567,7 +3689,7 @@ const TS={
   rem(t){if(t.remTime&&t.remDate)return S.notif&&S.notif.deadlines?` Reminder set for ${vT12(t.remTime)} ${vDateSay(t.remDate)}.`:' Reminder saved, but deadline alerts are switched off in Notifications.';return t.due&&S.notif&&S.notif.deadlines?(t.dueTime?' Reminder set for that time.':' Reminder set for 8 AM that day.'):''}
 };
 let VCTX=null,VPEND=null,VAGG=null;
-const vCtx=()=>VCTX&&Date.now()-VCTX.at<600000?S.tasks.find(t=>t.id===VCTX.id)||null:null;
+const vCtx=()=>{const c=VCTX||(S.taskMem&&S.taskMem.current);return c&&Date.now()-c.at<1200000?S.tasks.find(t=>t.id===c.id)||null:null};
 const VF_STOP=new Set(['task','tasks','reminder','reminders','my','the','a','an','one','that','this','it','please','item','todo','completed','complete','finished','done','old','all']);
 const VF_CATW={hackathon:'hackathon',hackathons:'hackathon',hack:'hackathon',hacks:'hackathon',course:'course',courses:'course',community:'community',communities:'community',club:'community',general:'general'};
 function vFind(q,wantDone){
@@ -3627,7 +3749,7 @@ function vApply(e,list){
       if(t.done){msgs.push(`${t.title} is already completed.`);continue}
       const snap=JSON.stringify(t),rec=!!t.rec;A.taskToggle({dataset:{arg:t.id}});
       if(!TS.saveNow()){TS.restore(snap);msgs.push(`I couldn't save that, so ${t.title} is still open.`);continue}
-      VCTX={id:t.id,at:Date.now()};msgs.push(rec?`Done. Next ${t.title} is due ${vDateSay(t.due)}.`:`Marked ${t.title} completed.`);undos.push(()=>TS.restore(snap));
+      VCTX=tmSet({id:t.id,at:Date.now()});msgs.push(rec?`Done. Next ${t.title} is due ${vDateSay(t.due)}.`:`Marked ${t.title} completed.`);undos.push(()=>TS.restore(snap));
     }else if(e.act==='move'){
       const p={};if(e.date)p.due=e.date;if(e.time)p.dueTime=e.time;
       if(!e.date&&e.time&&!t.due)p.due=mins(e.time)>nowM()?today():addDays(today(),1);
@@ -3638,7 +3760,7 @@ function vApply(e,list){
       msgs.push(`Updated the task to "${nt}" (${CATL[t.cat||'general']}).`);undos.push(()=>TS.restore(snap));
     }else if(e.act==='delete'){
       const copy={...t};if(!TS.remove(t)){msgs.push(`I couldn't delete ${t.title}: storage did not accept it.`);continue}
-      VCTX=null;msgs.push(`Deleted ${copy.title}. It is kept under Recently deleted.`);undos.push(()=>TS.unremove(copy.id));
+      VCTX=tmSet(null);msgs.push(`Deleted ${copy.title}. It is kept under Recently deleted.`);undos.push(()=>TS.unremove(copy.id));
     }
   }
   vSay(msgs.join(' '),undos.length?()=>{undos.forEach(u=>u());vBanner('Undone')}:null);
@@ -3651,7 +3773,7 @@ function vDirect(c){
     const r=TS.create({title,cat,due:c.date||null,dueTime:c.time||null,remDate:c.remDate,remTime:c.remTime,est:c.est,prio:c.prio,src:'voice'});
     if(r.fail==='storage')return vBanner("I couldn't save that: storage is full or blocked. Nothing was added.");
     if(r.fail)return vBanner('I did not get a task name. Say it again.');
-    if(r.dup)VCTX={id:r.dup.id,at:Date.now()};
+    if(r.dup)VCTX=tmSet({id:r.dup.id,at:Date.now()});
     if(r.dup&&c.remTime&&!(r.dup.remTime===c.remTime&&r.dup.remDate===c.remDate)){const sn=TS.patch(r.dup,{remDate:c.remDate,remTime:c.remTime});if(sn)return vSay(`${r.dup.title} was already in your tasks (${TS.where(r.dup)}), so I set its reminder for ${vT12(c.remTime)} ${vDateSay(c.remDate)}.`,()=>TS.restore(sn))}
     if(r.dup&&c.time&&!r.dup.dueTime){const sn=TS.patch(r.dup,{dueTime:c.time});if(sn)return vSay(`${r.dup.title} was already in your tasks (${TS.where(r.dup)}), so I set its time to ${vT12(c.time)} and updated the reminder.`,()=>TS.restore(sn))}
     if(r.dup)return vSay(`That is already in your tasks: ${r.dup.title} (${TS.where(r.dup)}). I did not add a duplicate.`);
@@ -3718,6 +3840,11 @@ const _vRun0=vRun;
 vRun=async function(raw,alts){
   const first=String(raw||'').trim();
   if(VPEND){if(Date.now()-VPEND.at<60000&&vResolvePend(first))return;VPEND=null}
+  if(VASK){const p=VASK;if(Date.now()-p.at>=90000)VASK=null;else{
+    const m=vAskMerge(p,first);
+    if(m==='cancel'){VASK=null;vSay('Okay, I dropped that.');return}
+    if(m==='again'){p.at=Date.now();vSay(p.question);return}
+    VASK=null;if(m)return vRun(m,alts)}}
   /* hackathon sentences carry several parts (dates, ticks, daily reminder) and must not be split or treated as a task edit */
   try{const hk=hkParse(vNorm(first),first);if(hk&&(hk.kind==='hackup'||hk.kind==='say'||(hk.kind==='clarify'&&/^hk/.test(hk.why))))return _vRun0(raw,alts)}catch(x){}
   const e=vEditParse(first);

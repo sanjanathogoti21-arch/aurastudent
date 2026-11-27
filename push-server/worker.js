@@ -91,18 +91,42 @@ async function handle(request, env) {
   let b; try { b = JSON.parse(raw); } catch { return json(env, { error: 'Bad JSON.' }, 400); }
   if (!b || typeof b !== 'object') return json(env, { error: 'Bad request.' }, 400);
   if (url.pathname === '/stt') {
-    if (!env.AI) return json(env, { error: 'Speech recognition is not set up on the server yet.' }, 501);
+    if (!env.AI && !env.WISPR_API_KEY) return json(env, { error: 'Speech recognition is not set up on the server yet.' }, 501);
     if (limited(ip, 'stt', 20, 60000) || limited(ip, 'sttday', 400, 86400e3)) return json(env, { error: 'Too many voice requests. Wait a minute and try again.' }, 429);
     const a = str(b.audio, 880000);
     if (a.length < 2000 || !/^[A-Za-z0-9+/=]+$/.test(a)) return json(env, { error: 'No audio received.' }, 400);
+    const LANGS = ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'bn', 'gu', 'pa', 'ur'];
+    const lang = LANGS.includes(b.lang) ? b.lang : '';
+    /* Wispr Flow Voice Interface API (speech to text + language detection only). Used when WISPR_API_KEY is set as a secret.
+       If Wispr is not configured or fails, the existing Whisper path below answers, so voice never breaks. */
+    let wisprNote = '';
+    if (env.WISPR_API_KEY) {
+      try {
+        const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 15000);
+        const body = { audio: a, context: {} };
+        if (lang) body.language = [lang];            // one language forces it; leaving it out lets Wispr detect
+        const wr = await fetch('https://platform-api.wisprflow.ai/api/v1/dash/api', {
+          method: 'POST', signal: ctl.signal,
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.WISPR_API_KEY },
+          body: JSON.stringify(body)
+        });
+        clearTimeout(tm);
+        if (wr.ok) {
+          const wj = await wr.json();
+          const text = String((wj && wj.text) || '').trim().slice(0, 500);
+          const dl = String((wj && wj.detected_language) || '').toLowerCase().slice(0, 2);
+          if (text) return json(env, { text, language: LANGS.includes(dl) ? dl : (dl || ''), engine: 'wispr' });
+          wisprNote = 'Wispr returned no text';
+        } else wisprNote = 'Wispr answered ' + wr.status;
+      } catch (e) { wisprNote = 'Wispr could not be reached'; }
+    }
     try {
-      const LANGS = ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'bn', 'gu', 'pa', 'ur'];
-      const lang = LANGS.includes(b.lang) ? b.lang : '';
       const opts = { audio: a };
       if (lang) opts.language = lang;
       if (lang === 'en') opts.initial_prompt = 'Aura. Add task, schedule class, mark done, open tasks, what is on today, smart plan, tomorrow at 5 pm, physics lab, assignment, hackathon.';
       const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', opts);
-      return json(env, { text: String((r && r.text) || '').trim().slice(0, 500) });
+      const wl = String((r && r.transcription_info && r.transcription_info.language) || '').toLowerCase().slice(0, 2);
+      return json(env, { text: String((r && r.text) || '').trim().slice(0, 500), language: lang || (LANGS.includes(wl) ? wl : ''), engine: 'whisper', note: wisprNote });
     } catch (e) { return aiFail(env, e, 'The speech service failed. Try again.'); }
   }
   if (url.pathname === '/nlu') {
